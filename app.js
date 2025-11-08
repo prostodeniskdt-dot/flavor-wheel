@@ -1,4 +1,3 @@
-
 (function(){
   const META = window.CATEGORY_META;
   const DATA = window.FLAVOR_DATA;
@@ -248,7 +247,7 @@
                 labelObj.width = Math.ceil(bb.width) + 16;
                 labelObj.height = Math.ceil(bb.height) + 8;
               }catch(e){}
-              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key });
+              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
         );
@@ -347,6 +346,11 @@
     $("#labels-layer").appendChild(g);
     labels.push({ g, pos: {...pos}, width: 360, height: 28, anchor: {...pos} });
     return g;
+  }
+  function stampAt(p, catKey){
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("class","stamp");
+    const c = document.createElementNS("http://www.w3.org/200/svg","circle");
   }
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
