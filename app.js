@@ -8,7 +8,7 @@
   const EDGE_PAD = 0.085;
   const TRUNK_LEN = 220, LEAF_MIN = 360, LEAF_MAX = 760;
   const DUR_TRUNK = 680, DUR_LEAF = 620;
-  const CURVINESS = 0.55, WOBBLE = 0.10; // больше изгибов
+  const CURVINESS = 0.55, WOBBLE = 0.10;
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
@@ -187,7 +187,6 @@
     gGraph.innerHTML = ""; gLabels.innerHTML = ""; gCallouts.innerHTML = ""; gBlobs.innerHTML = ""; gStamps.innerHTML = "";
     for(const k in trunks) delete trunks[k];
     labels.length = 0;
-    hideTip();
 
     const wrap = $(".canvas-wrap").getBoundingClientRect();
     centerLabel.style.left = (wrap.width/2) + "px";
@@ -218,7 +217,7 @@
     );
     if(myToken !== renderToken) return;
 
-    // leaves animate "simultaneously" with micro jitter
+    // leaves
     const leafPromises = [];
     for(const group of groups){
       const { meta, items, hub } = group;
@@ -230,9 +229,9 @@
         const t = count>1 ? (idx/(count-1)) : 0.5;
         const angle = meta.angle - spread/2 + t*spread + (Math.sin(idx*97.3)*0.06);
         const baseR = LEAF_MIN + (LEAF_MAX-LEAF_MIN) * (0.18 + 0.72*t);
-        const jitterR = baseR * (1 + (Math.cos(idx*13.7)*0.06)); // разные длины
+        const jitterR = baseR * (1 + (Math.cos(idx*13.7)*0.06));
         const leafPoint = clampPoint(pointOnAngle(CENTER, angle, jitterR));
-        const delay = Math.floor((Math.sin(idx*17.7)+1)*40); // 0..80ms
+        const delay = Math.floor((Math.sin(idx*17.7)+1)*40);
         leafPromises.push(
           new Promise(res=> setTimeout(res, delay)).then(()=> 
             animatePath(hub, leafPoint, meta.key, DUR_LEAF, angle, false).then(async (leaf)=>{
@@ -247,7 +246,7 @@
                 labelObj.width = Math.ceil(bb.width) + 16;
                 labelObj.height = Math.ceil(bb.height) + 8;
               }catch(e){}
-              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
+              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.targetKey });
             })
           )
         );
@@ -350,14 +349,9 @@
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class","stamp");
-    const c = document.createElementNS("http://www.w3.org/200/svg","circle");
-  }
-  function stampAt(p, catKey){
-    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
-    g.setAttribute("class","stamp");
     const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
     c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
-    const t = document.createElementNS("http://www.w3.org/2000/svg","text");
+    const t = document.createElementNS("http://www.w3.org/200/svg","text");
     t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
     let icon = "•"; if(catKey==='best') icon="★"; else if(catKey==='unexpected') icon="!"; else if(catKey==='good') icon="➜";
     t.textContent = icon;
@@ -381,21 +375,16 @@
   }
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
     const enter = (e)=>{ highlightRoute(leaf, catKey, true); };
-    const move  = (e)=>{ /* no tooltip */ };
     const leave = ()=>{ highlightRoute(leaf, catKey, false); };
     node.addEventListener("mouseenter", enter);
-    node.addEventListener("mousemove", move);
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
-    dot.addEventListener("mousemove", move);
     dot.addEventListener("mouseleave", leave);
     const activate = ()=>{ if(targetKey){ backFill(targetKey); render({ centerKey: targetKey }); } };
     node.addEventListener("click", activate);
     dot.addEventListener("click", activate);
     const touch = (e)=>{
-      const t = e.touches && e.touches[0] ? e.touches[0] : e.changedTouches[0];
       highlightRoute(leaf, catKey, true);
-      /* no tooltip */
       setTimeout(()=>{ highlightRoute(leaf, catKey, false); }, 1400);
     };
     node.addEventListener("touchstart", touch, {passive:true});
@@ -414,27 +403,9 @@
       if(trunk){ trunk.classList.remove('is-highlight-trunk'); }
     }
   }
-  function showTip(text, x, y){
-    const t = $('#tooltip'); if(!t) return;
-    if(!text){ t.hidden = true; return; }
-    t.textContent = text;
-    t.hidden = false;
-    moveTip(x, y);
-  }
-  function moveTip(x,y){
-    const t = $('#tooltip'); if(!t) return;
-    const pad = 12; // ближе к узлу
-    const vw = window.innerWidth, vh = window.innerHeight;
-    t.style.left = (x + pad) + "px";
-    t.style.top  = (y + pad) + "px";
-    const rect = t.getBoundingClientRect();
-    let nx = rect.left, ny = rect.top;
-    if(rect.right > vw - 8) nx = vw - rect.width - 8;
-    if(rect.bottom > vh - 8) ny = vh - rect.height - 8;
-    if(nx < 6) nx = 6; if(ny < 6) ny = 6;
-    t.style.left = nx + "px"; t.style.top  = ny + "px";
-  }
-  function hideTip(){ const t=$('#tooltip'); if(t) t.hidden = true; }
+  function showTip(text, x, y){}
+  function moveTip(x,y){}
+  function hideTip(){}
 
   function resolveLabelOverlaps(){
     if(labels.length < 2) return;
@@ -457,7 +428,6 @@
     }
     labels.forEach(l=>{
       l.g.setAttribute("transform", `translate(${l.pos.x},${l.pos.y})`);
-      /* callout lines disabled */
     });
   }
   function rectOf(l){ return { x: l.pos.x-2, y: l.pos.y-14, w: l.width, h: l.height }; }
