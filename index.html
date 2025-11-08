@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>Flavor Matrix — Skill Tree</title>
+  <link rel="stylesheet" href="styles.css?v=20.2" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">FLAVOR MATRIX — SKILL TREE <span class="badge">v20.2</span></div>
+    <div id="taxo" class="controls taxo-row">
+      <div class="field">
+        <input id="search" class="input search" placeholder="Поиск ингредиента…" />
+      </div>
+      <div class="field"><label>Категория</label><select id="catSelect" class="select"></select></div>
+      <div class="field"><label>Группа</label><select id="groupSelect" class="select"></select></div>
+      <div class="field"><label>Подгруппа</label><select id="subgroupSelect" class="select"></select></div>
+      <div class="field"><label>Наименование</label><select id="nameSelect" class="select"></select></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <h3>Легенда</h3>
+        <ul class="legend small">
+          <li><span class="chip chip-best"></span> Лучшие</li>
+          <li><span class="chip chip-good"></span> Средние</li>
+          <li><span class="chip chip-bad"></span> Слабые/конфликты</li>
+          <li><span class="chip chip-unexpected"></span> Неожиданные</li>
+        </ul>
+      </section>
+      <section class="panel">
+        <h3>Подсказка</h3>
+        <p>Клик по узлу — сделает его центром. На мобильных — тап по узлу.</p>
+      </section>
+      <section class="panel">
+        <h3>Заметки по центру</h3>
+        <div id="notes" class="notes">Выбери ингредиент…</div>
+      </section>
+    </aside>
+
+    <section class="canvas-wrap">
+      <svg id="canvas" class="canvas" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid meet" aria-label="Flavor graph">
+        <defs>
+          <filter id="dot-glow" x="-150%" y="-150%" width="400%" height="400%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6"/>
+          </filter>
+        </defs>
+        <g id="blobs-layer"></g>
+        <g id="graph-layer"></g>
+        <g id="callouts-layer"></g>
+        <g id="labels-layer"></g>
+        <g id="stamps-layer"></g>
+      </svg>
+      <div id="err" class="err" hidden></div>
+      <div id="tooltip" class="tooltip" hidden></div>
+    </section>
+  </main>
+
+  <a class="tg-btn" href="https://t.me/TomSemm" target="_blank" rel="noopener">
+    Подписаться на ТГ<br><span>о том о сем</span>
+  </a>
+
+  <script>window.APP_VERSION="20.0";</script>
+  <script src="data.js?v=20.2"></script>
+  <script src="app.js?v=20.2"></script>
+</body>
+</html>
