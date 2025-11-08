@@ -21,7 +21,6 @@
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
   function $(s, root=document){ return root.querySelector(s); }
-  const sleep = (ms)=> new Promise(r=> setTimeout(r, ms));
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -91,7 +90,6 @@
       if(match){ backFill(match); render({ centerKey: match }); }
     });
 
-    // start
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
   }
 
@@ -145,7 +143,6 @@
     notesBox.textContent = '—';
   }
 
-  // ---- aggregation so groups/subgroups are always drawable ----
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
@@ -157,7 +154,7 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
@@ -205,7 +202,6 @@
 
     drawBlobs();
 
-    // trunks animate together
     await Promise.all(
       groups.map(g=>{
         const hub = clampPoint(pointOnAngle(CENTER, g.meta.angle, TRUNK_LEN));
@@ -217,7 +213,6 @@
     );
     if(myToken !== renderToken) return;
 
-    // leaves
     const leafPromises = [];
     for(const group of groups){
       const { meta, items, hub } = group;
@@ -237,8 +232,8 @@
             animatePath(hub, leafPoint, meta.key, DUR_LEAF, angle, false).then(async (leaf)=>{
               endpointHalo(leafPoint, meta.key);
               const dot  = endpoint(leafPoint, meta.key);
-              const node = label(item.to, leafPoint, item.tip, state);
-              await nextFrame();
+              const node = label(item.to, leafPoint, item.tip);
+              await new Promise(r=> requestAnimationFrame(()=> r()));
               try{
                 const textEl = node.querySelector('text');
                 const bb = textEl.getBBox();
@@ -246,7 +241,7 @@
                 labelObj.width = Math.ceil(bb.width) + 16;
                 labelObj.height = Math.ceil(bb.height) + 8;
               }catch(e){}
-              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.targetKey });
+              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
         );
@@ -256,8 +251,6 @@
     if(myToken !== renderToken) return;
     resolveLabelOverlaps();
   }
-
-  function nextFrame(){ return new Promise(r=> requestAnimationFrame(()=> r())); }
 
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
@@ -328,10 +321,9 @@
     requestAnimationFrame(()=> requestAnimationFrame(()=> dot.classList.add("show")));
     return dot;
   }
-  function label(textStr, pos, tip){
+  function label(textStr, pos){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class", "node leaf show");
-    g.setAttribute("data-key", textStr);
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
     const text = document.createElementNS("http://www.w3.org/2000/svg","text");
     text.textContent = textStr;
@@ -351,7 +343,7 @@
     g.setAttribute("class","stamp");
     const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
     c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
-    const t = document.createElementNS("http://www.w3.org/200/svg","text");
+    const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
     let icon = "•"; if(catKey==='best') icon="★"; else if(catKey==='unexpected') icon="!"; else if(catKey==='good') icon="➜";
     t.textContent = icon;
@@ -374,8 +366,8 @@
     });
   }
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
-    const enter = (e)=>{ highlightRoute(leaf, catKey, true); };
-    const leave = ()=>{ highlightRoute(leaf, catKey, false); };
+    const enter = ()=>{ const allLinks = $("#graph-layer").querySelectorAll('.link'); allLinks.forEach(p=> p.classList.add('dim')); leaf.classList.remove('dim'); leaf.classList.add('is-highlight'); const trunk = trunks[catKey]; if(trunk){ trunk.classList.remove('dim'); trunk.classList.add('is-highlight-trunk'); } };
+    const leave = ()=>{ const allLinks = $("#graph-layer").querySelectorAll('.link'); allLinks.forEach(p=> p.classList.remove('dim')); leaf.classList.remove('is-highlight'); const trunk = trunks[catKey]; if(trunk){ trunk.classList.remove('is-highlight-trunk'); } };
     node.addEventListener("mouseenter", enter);
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
@@ -383,29 +375,7 @@
     const activate = ()=>{ if(targetKey){ backFill(targetKey); render({ centerKey: targetKey }); } };
     node.addEventListener("click", activate);
     dot.addEventListener("click", activate);
-    const touch = (e)=>{
-      highlightRoute(leaf, catKey, true);
-      setTimeout(()=>{ highlightRoute(leaf, catKey, false); }, 1400);
-    };
-    node.addEventListener("touchstart", touch, {passive:true});
-    dot.addEventListener("touchstart", touch, {passive:true});
   }
-  function highlightRoute(leafPath, catKey, on){
-    const allLinks = $("#graph-layer").querySelectorAll('.link');
-    allLinks.forEach(p=> p.classList.toggle('dim', on));
-    if(on){
-      leafPath.classList.remove('dim'); leafPath.classList.add('is-highlight');
-      const trunk = trunks[catKey];
-      if(trunk){ trunk.classList.remove('dim'); trunk.classList.add('is-highlight-trunk'); }
-    }else{
-      leafPath.classList.remove('is-highlight');
-      const trunk = trunks[catKey];
-      if(trunk){ trunk.classList.remove('is-highlight-trunk'); }
-    }
-  }
-  function showTip(text, x, y){}
-  function moveTip(x,y){}
-  function hideTip(){}
 
   function resolveLabelOverlaps(){
     if(labels.length < 2) return;
