@@ -15,16 +15,6 @@
   const DUR_TRUNK = 680, DUR_LEAF = 620;
   const CURVINESS = 0.55, WOBBLE = 0.10;
 
-  const ALIASES = {
-    "маракуя":"Маракуйя",
-    "корневица":"Корневища",
-    "какако шоколад":"Какао/Шоколад",
-    "свеживе травы":"Свежие травы",
-    "тропические":"Тропические",
-    "косточковые":"Косточковые",
-    "яблоки/груши":"Яблоки/Груши"
-  };
-
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
   let centerLabel, tooltip;
@@ -36,6 +26,28 @@
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
   const $ = (s, root=document)=> root.querySelector(s);
+
+  const ALIASES = {
+    "маракуя":"Маракуйя", "маракуйа":"Маракуйя",
+    "кокако шоколад":"Какао/Шоколад", "какако шоколад":"Какао/Шоколад", "какао шоколад":"Какао/Шоколад",
+    "свеживе травы":"Свежие травы",
+    "корневица":"Корневища",
+    "тропические":"Тропические","ягоды":"Ягоды","косточковые":"Косточковые","яблоки/груши":"Яблоки/Груши",
+    "водка":"Водка","текила":"Текила","виски":"Виски","ром":"Ром",
+    "белый ром":"Светлый ром (White/Blanco)","светлый ром":"Светлый ром (White/Blanco)",
+    "золотой ром":"Золотой ром (Gold/Oro)",
+    "темный ром":"Тёмный ром (Dark/Black)","тёмный ром":"Тёмный ром (Dark/Black)",
+    "спайсед ром":"Пряный ром (Spiced)","пряный ром":"Пряный ром (Spiced)",
+    "офтд":"Оверпруф ром (Overproof)","overproof":"Оверпруф ром (Overproof)",
+    "агриколь":"Агриколь ром — Blanc","agricole":"Агриколь ром — Blanc"
+  };
+  function normalizeKey(s){
+    if(!s) return s;
+    const k = String(s).trim();
+    const low = k.toLowerCase();
+    return ALIASES[low] || k;
+  }
+  function isCategory(key){ return (TAXO.categories||[]).includes(key); }
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -51,7 +63,7 @@
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
 
     if(!window.TAXONOMY || !window.CATEGORY_META){
-      showError("data.js не загрузился: проверь синтаксис файла.");
+      showError("data.js не загрузился: проверь синтаксис (лишние символы, экранирование, запятая).");
       return;
     }
 
@@ -82,15 +94,16 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      // ВАЖНО: для категории НЕ строим колесо
-      clearAndMessage('Выбери группу/подгруппу/наименование…');
+      // категорию НЕ рендерим
+      clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
     });
     groupSel.addEventListener('change', ()=>{
       const grp = groupSel.value;
       const subs = TAXO.subgroups[grp] || [];
       fillSelect(subSel, ['Не выбрано', ...subs]);
       fillSelect(nameSel, ['Не выбрано']);
-      if(grp !== 'Не выбрано' && !isCategory(grp)) { render({ centerKey: grp }); }
+
+      if(grp !== 'Не выбрано') { render({ centerKey: grp }); }
       else clearAndMessage('Выбери подгруппу или наименование…');
     });
     subSel.addEventListener('change', ()=>{
@@ -101,26 +114,23 @@
       else clearAndMessage('Выбери наименование…');
     });
     nameSel.addEventListener('change', ()=>{
-      const nm = nameSel.value;
+      let nm = nameSel.value;
+      nm = normalizeKey(nm);
       if(nm !== 'Не выбрано'){ backFill(nm); render({ centerKey: nm }); }
       else clearAndMessage('—');
     });
 
-    // omni-search (категории игнорируем)
+    // omni-search
     search?.addEventListener("input", ()=>{
-      let q = (search.value || "").trim().toLowerCase();
-      if(!q){ return; }
-      if(ALIASES[q]) q = ALIASES[q].toLowerCase();
+      const q0 = (search.value || "").trim();
+      if(!q0){ return; }
+      const q = normalizeKey(q0).toLowerCase();
       const keys = allSearchKeys();
       const match = keys.find(k => String(k).toLowerCase().includes(q));
       if (match && !isCategory(match)) { backFill(match); render({ centerKey: match }); }
     });
 
-    clearAndMessage('Выбери группу/подгруппу/наименование…');
-  }
-
-  function isCategory(key){
-    return !!(TAXO.groups && TAXO.groups[key]);
+    clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
   }
 
   function showError(msg){
@@ -130,15 +140,8 @@
     box.hidden = false;
   }
 
-  function resolveAliasKey(k){
-    if(!k) return k;
-    const norm = String(k).trim().toLowerCase();
-    return ALIASES[norm] || k;
-  }
-
   function backFill(nameOrKey){
-    const resolved = resolveAliasKey(nameOrKey);
-    const key = resolved;
+    const key = normalizeKey(nameOrKey);
     const sub = reverseIdx.nameToSub[key];
     const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
     const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
@@ -235,7 +238,6 @@
       });
       return nonEmpty(agg)? agg : null;
     }
-    // categories intentionally not aggregated here
     return null;
   }
   function aggregateFromParents(key){
@@ -256,7 +258,7 @@
     return nonEmpty(agg) ? agg : null;
   }
   function datasetFor(key){
-    if(isCategory(key)) return cloneEmpty(); // категоря не строится
+    if(isCategory(key)) return cloneEmpty(); // категории не рендерим
     const ds = window.FLAVOR_DATA[key];
     if(nonEmpty(ds)) return ds;
     const down = aggregateFromChildren(key);
@@ -336,7 +338,7 @@
     return dot;
   }
 
-  // --- label wrapping to 2 lines
+  // two-line label split
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
@@ -348,7 +350,6 @@
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
-    // balanced split
     let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
@@ -439,9 +440,12 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
-    const activate = ()=>{ if(targetKey){ backFill(targetKey); if(!isCategory(targetKey)) render({ centerKey: targetKey }); } };
-    node.addEventListener("click", activate);
-    dot.addEventListener("click", activate);
+    const validTarget = targetKey && (reverseIdx.nameToSub[targetKey] || reverseIdx.subToGroup[targetKey] || reverseIdx.groupToCat[targetKey] || (window.FLAVOR_DATA && window.FLAVOR_DATA[targetKey] && (window.FLAVOR_DATA[targetKey].best?.length || window.FLAVOR_DATA[targetKey].good?.length || window.FLAVOR_DATA[targetKey].bad?.length || window.FLAVOR_DATA[targetKey].unexpected?.length)));
+    if(validTarget){
+      const activate = ()=>{ if(targetKey && !isCategory(targetKey)){ backFill(targetKey); render({ centerKey: targetKey }); } };
+      node.addEventListener("click", activate);
+      dot.addEventListener("click", activate);
+    }
   }
 
   function resolveLabelOverlaps(){
@@ -474,7 +478,6 @@
   function vecFromCenter(p){ const dx = p.x - (1600/2), dy = p.y - (1000/2); const len = Math.hypot(dx, dy) || 1; return { x: dx/len, y: dy/len }; }
 
   async function render(state){
-    if(isCategory(state.centerKey)){ clearAndMessage('Выбери группу/подгруппу/наименование…'); return; }
     const myToken = ++renderToken;
     gGraph.innerHTML = ""; gLabels.innerHTML = ""; gCallouts.innerHTML = ""; gBlobs.innerHTML = ""; gStamps.innerHTML = "";
     for(const k in trunks) delete trunks[k];
@@ -486,7 +489,10 @@
     centerLabel.textContent = state.centerKey;
 
     const dataset = datasetFor(state.centerKey);
-    if(!dataset){ centerLabel.textContent = '—'; return; }
+    if(!dataset || (!dataset.best?.length && !dataset.good?.length && !dataset.bad?.length && !dataset.unexpected?.length)){
+      centerLabel.textContent = state.centerKey + ' — нет данных';
+      return;
+    }
 
     const groups = META.map(meta => ({
       meta,
@@ -506,7 +512,6 @@
         });
       })
     );
-
     if(myToken !== renderToken) return;
 
     const leafPromises = [];
@@ -538,7 +543,7 @@
                   labelObj.width = Math.ceil(bb.width) + 16;
                   labelObj.height = Math.ceil(bb.height) + 8;
                 }
-              }catch(e){ /* no-op */ }
+              }catch(e){ /* swallow */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
