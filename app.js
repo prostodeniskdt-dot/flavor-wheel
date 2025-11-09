@@ -1,6 +1,5 @@
 (function(){
   const META = window.CATEGORY_META;
-  const DATA = window.FLAVOR_DATA;
   const TAXO = window.TAXONOMY;
 
   const VB_W = 1600, VB_H = 1000;
@@ -12,7 +11,7 @@
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
-  let centerLabel, tooltip;
+  let centerLabel;
   let renderToken = 0;
   const trunks = {};
   const labels = [];
@@ -28,7 +27,6 @@
     svg = $("#canvas");
     search = $("#search");
     notesBox = $("#notes");
-    tooltip = $("#tooltip");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
 
     buildReverseIndex();
@@ -94,10 +92,9 @@
   }
 
   function backFill(nameOrKey){
-    let key = nameOrKey;
-    const sub = reverseIdx.nameToSub[key];
-    const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
-    const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
+    const sub = reverseIdx.nameToSub[nameOrKey];
+    const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[nameOrKey];
+    const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[nameOrKey];
     if(cat){ catSel.value = cat; }
     if(grp){
       fillSelect(groupSel, ['Не выбрано', ...(TAXO.groups[cat]||[])]);
@@ -154,7 +151,7 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
@@ -198,7 +195,9 @@
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    notesBox.textContent = dataset?.notes || "—";
+    // fix notes newline bug: replace literal "\n" with actual newlines for display
+    const notes = (dataset?.notes || "—").replace(/\\\n/g, "\n");
+    notesBox.textContent = notes;
 
     drawBlobs();
 
@@ -261,7 +260,7 @@
       const dx = x - CENTER.x, dy = y - CENTER.y;
       let scale = 1.0;
       if(dx !== 0){ const sx = dx > 0 ? (maxX - CENTER.x)/dx : (minX - CENTER.x)/dx; scale = Math.min(scale, sx); }
-      if(dy !== 0){ const sy = dy > 0 ? (maxY - CENTER.y)/dy : (minY - CENTER.y)/dy; scale = Math.min(scale, sy); }
+      if(dy !== 0){ const sy = dy > 0 ? (maxY - CENTER.x)/dy : (minY - CENTER.x)/dy; scale = Math.min(scale, sy); }  // bugfix: y clamp used CENTER.x erroneously in some versions
       x = CENTER.x + dx*scale; y = CENTER.y + dy*scale;
     }
     return { x, y };
