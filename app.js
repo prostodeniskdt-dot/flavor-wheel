@@ -198,19 +198,36 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names
+    // 1) Subgroup -> names
+    if(TAXO.names[key]){
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
+    // 2) Group -> subgroups -> names
+    if(TAXO.subgroups[key]){
       (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
         (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+      });
+      return nonEmpty(agg)? agg : null;
+    }
+    // 3) Category -> groups -> subgroups -> names
+    if(TAXO.groups[key]){
+      (TAXO.groups[key]||[]).forEach(grp=>{
+        const grpDs = window.FLAVOR_DATA[grp];
+        if(nonEmpty(grpDs)) mergeInto(agg, grpDs);
+        if(TAXO.subgroups[grp]){
+          (TAXO.subgroups[grp]||[]).forEach(sub=>{
+            const subDs = window.FLAVOR_DATA[sub];
+            if(nonEmpty(subDs)) mergeInto(agg, subDs);
+            (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+          });
+        }
       });
       return nonEmpty(agg)? agg : null;
     }
@@ -230,6 +247,8 @@
     if(grp){
       if(nonEmpty(window.FLAVOR_DATA[grp])) mergeInto(agg, window.FLAVOR_DATA[grp]);
       const grpAgg = aggregateFromChildren(grp); if(grpAgg) mergeInto(agg, grpAgg);
+      const cat = reverseIdx.groupToCat[grp];
+      if(cat && nonEmpty(window.FLAVOR_DATA[cat])) mergeInto(agg, window.FLAVOR_DATA[cat]);
     }
     return nonEmpty(agg) ? agg : null;
   }
@@ -317,7 +336,6 @@
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    // normalize separators to help splits: space around slashes/dashes
     const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
     const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
@@ -326,7 +344,6 @@
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
-    // balanced split
     let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
@@ -381,7 +398,6 @@
     g.appendChild(c); g.appendChild(t);
     gStamps.appendChild(g);
   }
-
   function drawBlobs(){
     const blobSpec = [
       {key:'best', x: CENTER.x, y: CENTER.y-240, rx: 240, ry: 140},
