@@ -15,6 +15,16 @@
   const DUR_TRUNK = 680, DUR_LEAF = 620;
   const CURVINESS = 0.55, WOBBLE = 0.10;
 
+  const ALIASES = {
+    "маракуя":"Маракуйя",
+    "корневица":"Корневища",
+    "какако шоколад":"Какао/Шоколад",
+    "свеживе травы":"Свежие травы",
+    "тропические":"Тропические",
+    "косточковые":"Косточковые",
+    "яблоки/груши":"Яблоки/Груши"
+  };
+
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
   let centerLabel, tooltip;
@@ -41,7 +51,7 @@
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
 
     if(!window.TAXONOMY || !window.CATEGORY_META){
-      showError("data.js не загрузился: проверь синтаксис (лишние символы, экранирование, запятая).");
+      showError("data.js не загрузился: проверь синтаксис файла.");
       return;
     }
 
@@ -72,16 +82,15 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-
-      if (cat !== 'Не выбрано') { render({ centerKey: cat }); }
-      else clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
+      // ВАЖНО: для категории НЕ строим колесо
+      clearAndMessage('Выбери группу/подгруппу/наименование…');
     });
     groupSel.addEventListener('change', ()=>{
       const grp = groupSel.value;
       const subs = TAXO.subgroups[grp] || [];
       fillSelect(subSel, ['Не выбрано', ...subs]);
       fillSelect(nameSel, ['Не выбрано']);
-      if(grp !== 'Не выбрано') { render({ centerKey: grp }); }
+      if(grp !== 'Не выбрано' && !isCategory(grp)) { render({ centerKey: grp }); }
       else clearAndMessage('Выбери подгруппу или наименование…');
     });
     subSel.addEventListener('change', ()=>{
@@ -97,16 +106,21 @@
       else clearAndMessage('—');
     });
 
-    // omni-search
+    // omni-search (категории игнорируем)
     search?.addEventListener("input", ()=>{
-      const q = (search.value || "").trim().toLowerCase();
+      let q = (search.value || "").trim().toLowerCase();
       if(!q){ return; }
+      if(ALIASES[q]) q = ALIASES[q].toLowerCase();
       const keys = allSearchKeys();
       const match = keys.find(k => String(k).toLowerCase().includes(q));
-      if (match) { backFill(match); render({ centerKey: match }); }
+      if (match && !isCategory(match)) { backFill(match); render({ centerKey: match }); }
     });
 
-    clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
+    clearAndMessage('Выбери группу/подгруппу/наименование…');
+  }
+
+  function isCategory(key){
+    return !!(TAXO.groups && TAXO.groups[key]);
   }
 
   function showError(msg){
@@ -116,8 +130,15 @@
     box.hidden = false;
   }
 
+  function resolveAliasKey(k){
+    if(!k) return k;
+    const norm = String(k).trim().toLowerCase();
+    return ALIASES[norm] || k;
+  }
+
   function backFill(nameOrKey){
-    const key = nameOrKey;
+    const resolved = resolveAliasKey(nameOrKey);
+    const key = resolved;
     const sub = reverseIdx.nameToSub[key];
     const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
     const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
@@ -131,7 +152,7 @@
       subSel.value = sub;
       const names = TAXO.names[sub] || [];
       fillSelect(nameSel, ['Не выбрано', ...names]);
-      if((TAXO.names[sub]||[]).includes(nameOrKey)) nameSel.value = nameOrKey;
+      if((TAXO.names[sub]||[]).includes(key)) nameSel.value = key;
     }else{
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
@@ -198,17 +219,15 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    // 1) Subgroup -> names
-    if(TAXO.names[key]){
+    if(TAXO.names[key]){ // subgroup -> collect children names
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    // 2) Group -> subgroups -> names
-    if(TAXO.subgroups[key]){
+    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
       (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
@@ -216,21 +235,7 @@
       });
       return nonEmpty(agg)? agg : null;
     }
-    // 3) Category -> groups -> subgroups -> names
-    if(TAXO.groups[key]){
-      (TAXO.groups[key]||[]).forEach(grp=>{
-        const grpDs = window.FLAVOR_DATA[grp];
-        if(nonEmpty(grpDs)) mergeInto(agg, grpDs);
-        if(TAXO.subgroups[grp]){
-          (TAXO.subgroups[grp]||[]).forEach(sub=>{
-            const subDs = window.FLAVOR_DATA[sub];
-            if(nonEmpty(subDs)) mergeInto(agg, subDs);
-            (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
-          });
-        }
-      });
-      return nonEmpty(agg)? agg : null;
-    }
+    // categories intentionally not aggregated here
     return null;
   }
   function aggregateFromParents(key){
@@ -247,12 +252,11 @@
     if(grp){
       if(nonEmpty(window.FLAVOR_DATA[grp])) mergeInto(agg, window.FLAVOR_DATA[grp]);
       const grpAgg = aggregateFromChildren(grp); if(grpAgg) mergeInto(agg, grpAgg);
-      const cat = reverseIdx.groupToCat[grp];
-      if(cat && nonEmpty(window.FLAVOR_DATA[cat])) mergeInto(agg, window.FLAVOR_DATA[cat]);
     }
     return nonEmpty(agg) ? agg : null;
   }
   function datasetFor(key){
+    if(isCategory(key)) return cloneEmpty(); // категоря не строится
     const ds = window.FLAVOR_DATA[key];
     if(nonEmpty(ds)) return ds;
     const down = aggregateFromChildren(key);
@@ -332,7 +336,7 @@
     return dot;
   }
 
-  // --- label wrapping to 2 lines (fixed regex)
+  // --- label wrapping to 2 lines
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
@@ -344,6 +348,7 @@
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
+    // balanced split
     let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
@@ -398,6 +403,7 @@
     g.appendChild(c); g.appendChild(t);
     gStamps.appendChild(g);
   }
+
   function drawBlobs(){
     const blobSpec = [
       {key:'best', x: CENTER.x, y: CENTER.y-240, rx: 240, ry: 140},
@@ -433,7 +439,7 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
-    const activate = ()=>{ if(targetKey){ backFill(targetKey); render({ centerKey: targetKey }); } };
+    const activate = ()=>{ if(targetKey){ backFill(targetKey); if(!isCategory(targetKey)) render({ centerKey: targetKey }); } };
     node.addEventListener("click", activate);
     dot.addEventListener("click", activate);
   }
@@ -468,6 +474,7 @@
   function vecFromCenter(p){ const dx = p.x - (1600/2), dy = p.y - (1000/2); const len = Math.hypot(dx, dy) || 1; return { x: dx/len, y: dy/len }; }
 
   async function render(state){
+    if(isCategory(state.centerKey)){ clearAndMessage('Выбери группу/подгруппу/наименование…'); return; }
     const myToken = ++renderToken;
     gGraph.innerHTML = ""; gLabels.innerHTML = ""; gCallouts.innerHTML = ""; gBlobs.innerHTML = ""; gStamps.innerHTML = "";
     for(const k in trunks) delete trunks[k];
@@ -499,6 +506,7 @@
         });
       })
     );
+
     if(myToken !== renderToken) return;
 
     const leafPromises = [];
@@ -530,7 +538,7 @@
                   labelObj.width = Math.ceil(bb.width) + 16;
                   labelObj.height = Math.ceil(bb.height) + 8;
                 }
-              }catch(e){ /* swallow */ }
+              }catch(e){ /* no-op */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
