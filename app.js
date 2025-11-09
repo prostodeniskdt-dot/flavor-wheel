@@ -1,6 +1,8 @@
+\
 (function(){
   const META = window.CATEGORY_META;
   const TAXO = window.TAXONOMY;
+  const DATA = window.FLAVOR_DATA || {};
 
   const VB_W = 1600, VB_H = 1000;
   const CENTER = { x: VB_W/2, y: VB_H/2 };
@@ -80,16 +82,33 @@
       else clearAndMessage('—');
     });
 
-    // omni-search
-    const allKeys = ()=> Object.keys(window.FLAVOR_DATA||{});
+    // omni-search (now includes taxonomy keys, not only FLAVOR_DATA)
     search.addEventListener("input", ()=>{
       const q = (search.value || "").trim().toLowerCase();
       if(!q){ return; }
-      const match = allKeys().find(k => k.toLowerCase().includes(q));
+      const keys = allKeys();
+      const match = keys.find(k => String(k).toLowerCase().includes(q));
       if (match) { backFill(match); render({ centerKey: match }); }
     });
 
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
+  }
+
+  function allKeys(){
+    const keys = new Set(Object.keys(window.FLAVOR_DATA || {}));
+    // categories
+    (TAXO.categories||[]).forEach(c=> keys.add(c));
+    // groups
+    Object.values(TAXO.groups||{}).forEach(arr => (arr||[]).forEach(k=> keys.add(k)));
+    // subgroups
+    Object.keys(TAXO.subgroups||{}).forEach(grp => {
+      (TAXO.subgroups[grp]||[]).forEach(sg => keys.add(sg));
+    });
+    // names
+    Object.keys(TAXO.names||{}).forEach(sub => {
+      (TAXO.names[sub]||[]).forEach(nm => keys.add(nm));
+    });
+    return Array.from(keys);
   }
 
   function backFill(nameOrKey){
@@ -117,20 +136,20 @@
   function buildReverseIndex(){
     const idx = reverseIdx;
     Object.entries(TAXO.names).forEach(([sub, arr])=>{
-      arr.forEach(n=> idx.nameToSub[n]=sub);
+      (arr||[]).forEach(n=> idx.nameToSub[n]=sub);
     });
     Object.entries(TAXO.subgroups).forEach(([grp, arr])=>{
-      arr.forEach(s=> idx.subToGroup[s]=grp);
+      (arr||[]).forEach(s=> idx.subToGroup[s]=grp);
     });
     Object.entries(TAXO.groups).forEach(([cat, arr])=>{
-      arr.forEach(g=> idx.groupToCat[g]=cat);
+      (arr||[]).forEach(g=> idx.groupToCat[g]=cat);
     });
   }
 
   function fillSelect(el, arr){
     const prev = el.value;
-    el.innerHTML = arr.map(v=>`<option value="${v}">${v}</option>`).join('');
-    el.value = arr.includes(prev)? prev : arr[0] || 'Не выбрано';
+    el.innerHTML = (arr||[]).map(v=>`<option value="${v}">${v}</option>`).join('');
+    el.value = (arr||[]).includes(prev)? prev : (arr&&arr[0] || 'Не выбрано');
   }
 
   function clearAndMessage(msg){
@@ -150,11 +169,11 @@
   function cloneEmpty(){ return { notes:'', best:[], good:[], bad:[], unexpected:[] }; }
   function mergeInto(agg, part){
     ['best','good','bad','unexpected'].forEach(k=>{
-      (part[k]||[]).forEach(x=>{
+      (part&&part[k]||[]).forEach(x=>{
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part&&part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
@@ -172,11 +191,40 @@
     }
     return null;
   }
+  function aggregateFromParents(key){
+    // if key is name -> try its subgroup, then its group aggregates
+    const sub = reverseIdx.nameToSub[key];
+    if(sub){
+      const sds = window.FLAVOR_DATA[sub];
+      if(nonEmpty(sds)) return sds;
+      const sagg = aggregateFromChildren(sub);
+      if(nonEmpty(sagg)) return sagg;
+      const grp = reverseIdx.subToGroup[sub];
+      if(grp){
+        const gds = window.FLAVOR_DATA[grp];
+        if(nonEmpty(gds)) return gds;
+        const gagg = aggregateFromChildren(grp);
+        if(nonEmpty(gagg)) return gagg;
+      }
+    }
+    // if key is subgroup -> try its group
+    const grp2 = reverseIdx.subToGroup[key];
+    if(grp2){
+      const gds = window.FLAVOR_DATA[grp2];
+      if(nonEmpty(gds)) return gds;
+      const gagg = aggregateFromChildren(grp2);
+      if(nonEmpty(gagg)) return gagg;
+    }
+    return null;
+  }
   function datasetFor(key){
     const ds = window.FLAVOR_DATA[key];
     if(nonEmpty(ds)) return ds;
     const agg = aggregateFromChildren(key);
-    return agg || ds || cloneEmpty();
+    if(nonEmpty(agg)) return agg;
+    const up = aggregateFromParents(key);
+    if(nonEmpty(up)) return up;
+    return ds || cloneEmpty();
   }
 
   // geometry
@@ -250,13 +298,13 @@
     return dot;
   }
 
-  // --- label wrapping to 2 lines (safe & stable)
+  // --- label wrapping to 2 lines (fixed regex)
   function twoLineSplit(s){
     const str = String(s||"").trim();
-    if(!str) return ["" ];
+    if(!str) return [""];
     // normalize separators to help splits: space around slashes/dashes
-    const norm = str.replace(/\\//g,' / ').replace(/-/g,' - ');
-    const parts = norm.trim().split(/\\s+/);
+    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=12) return [w];
@@ -264,7 +312,7 @@
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
     // balanced split
-    let best = [str, "" ]; let bestScore = Infinity;
+    let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
       const r = parts.slice(i).join(" ");
@@ -318,7 +366,6 @@
     g.appendChild(c); g.appendChild(t);
     gStamps.appendChild(g);
   }
-
   function drawBlobs(){
     const blobSpec = [
       {key:'best', x: CENTER.x, y: CENTER.y-240, rx: 240, ry: 140},
@@ -374,7 +421,6 @@
             const step = 1.15 * (1 - pass/passes);
             a.pos.x += va.x*step; a.pos.y += va.y*step;
             b.pos.x += vb.x*step; b.pos.y += vb.y*step;
-            // clamp after push to keep inside stage
             a.pos = clampPoint(a.pos);
             b.pos = clampPoint(b.pos);
           }
@@ -398,7 +444,7 @@
     const wrap = $(".canvas-wrap").getBoundingClientRect();
     centerLabel.style.left = (wrap.width/2) + "px";
     centerLabel.style.top  = (wrap.height/2) + "px";
-    centerLabel.textContent = state.centerKey;
+    centerLabel.textContent = state.centerKey || '';
 
     const dataset = datasetFor(state.centerKey);
     if(!dataset){ centerLabel.textContent = '—'; return; }
