@@ -1,4 +1,3 @@
-
 (function(){
   const META = window.CATEGORY_META;
   const DATA = window.FLAVOR_DATA;
@@ -82,13 +81,13 @@
       else clearAndMessage('—');
     });
 
-    // omni-search
+    // omni-search (bugfix: remove stray label "ifmatch", handle slashes/dashes)
     const allKeys = ()=> Object.keys(window.FLAVOR_DATA||{});
     search.addEventListener("input", ()=>{
       const q = search.value.trim().toLowerCase();
       if(!q){ return; }
       const match = allKeys().find(k => k.toLowerCase().includes(q));
-      ifmatch:{ if(match){ backFill(match); render({ centerKey: match }); } }
+      if (match){ backFill(match); render({ centerKey: match }); }
     });
 
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
@@ -251,11 +250,11 @@
     return dot;
   }
 
-  // --- label wrapping to 2 lines
+  // --- label wrapping to 2 lines (aware of slashes/dashes)
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    const parts = str.split(/\s+/);
+    const parts = str.replace(/[-/]/g,' ').split(/\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=10) return [w];
