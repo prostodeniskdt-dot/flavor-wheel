@@ -1,5 +1,7 @@
+
 (function(){
   const META = window.CATEGORY_META;
+  const DATA = window.FLAVOR_DATA;
   const TAXO = window.TAXONOMY;
 
   const VB_W = 1600, VB_H = 1000;
@@ -11,7 +13,7 @@
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
-  let centerLabel;
+  let centerLabel, tooltip;
   let renderToken = 0;
   const trunks = {};
   const labels = [];
@@ -27,6 +29,7 @@
     svg = $("#canvas");
     search = $("#search");
     notesBox = $("#notes");
+    tooltip = $("#tooltip");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
 
     buildReverseIndex();
@@ -85,16 +88,17 @@
       const q = search.value.trim().toLowerCase();
       if(!q){ return; }
       const match = allKeys().find(k => k.toLowerCase().includes(q));
-      if(match){ backFill(match); render({ centerKey: match }); }
+      ifmatch:{ if(match){ backFill(match); render({ centerKey: match }); } }
     });
 
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
   }
 
   function backFill(nameOrKey){
-    const sub = reverseIdx.nameToSub[nameOrKey];
-    const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[nameOrKey];
-    const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[nameOrKey];
+    let key = nameOrKey;
+    const sub = reverseIdx.nameToSub[key];
+    const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
+    const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
     if(cat){ catSel.value = cat; }
     if(grp){
       fillSelect(groupSel, ['Не выбрано', ...(TAXO.groups[cat]||[])]);
@@ -147,7 +151,9 @@
   function cloneEmpty(){ return { notes:'', best:[], good:[], bad:[], unexpected:[] }; }
   function mergeInto(agg, part){
     ['best','good','bad','unexpected'].forEach(k=>{
-      (part[k]||[]).forEach(x=>{ if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''}); });
+      (part[k]||[]).forEach(x=>{
+        if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
+      });
     });
     if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
@@ -174,79 +180,7 @@
     return agg || ds || cloneEmpty();
   }
 
-  async function render(state){
-    const myToken = ++renderToken;
-    gGraph.innerHTML = ""; gLabels.innerHTML = ""; gCallouts.innerHTML = ""; gBlobs.innerHTML = ""; gStamps.innerHTML = "";
-    for(const k in trunks) delete trunks[k];
-    labels.length = 0;
-
-    const wrap = $(".canvas-wrap").getBoundingClientRect();
-    centerLabel.style.left = (wrap.width/2) + "px";
-    centerLabel.style.top  = (wrap.height/2) + "px";
-    centerLabel.textContent = state.centerKey;
-
-    const dataset = datasetFor(state.centerKey);
-    if(!dataset){ centerLabel.textContent = '—'; return; }
-
-    const groups = META.map(meta => ({
-      meta,
-      items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
-    }));
-
-    notesBox.textContent = dataset?.notes || "—";
-
-    drawBlobs();
-
-    await Promise.all(
-      groups.map(g=>{
-        const hub = clampPoint(pointOnAngle(CENTER, g.meta.angle, TRUNK_LEN));
-        g.hub = hub;
-        return animatePath(CENTER, hub, g.meta.key, DUR_TRUNK, g.meta.angle, true).then(path=>{
-          trunks[g.meta.key] = path; stampAt(hub, g.meta.key);
-        });
-      })
-    );
-    if(myToken !== renderToken) return;
-
-    const leafPromises = [];
-    for(const group of groups){
-      const { meta, items, hub } = group;
-      const count = items.length;
-      if(count === 0) continue;
-      const spread = Math.min(2.05, 0.95 + Math.log2(count+1)*0.52);
-      for(let idx=0; idx<count; idx++){
-        const item = items[idx];
-        const t = count>1 ? (idx/(count-1)) : 0.5;
-        const angle = meta.angle - spread/2 + t*spread + (Math.sin(idx*97.3)*0.06);
-        const baseR = LEAF_MIN + (LEAF_MAX-LEAF_MIN) * (0.18 + 0.72*t);
-        const jitterR = baseR * (1 + (Math.cos(idx*13.7)*0.06));
-        const leafPoint = clampPoint(pointOnAngle(CENTER, angle, jitterR));
-        const delay = Math.floor((Math.sin(idx*17.7)+1)*40);
-        leafPromises.push(
-          new Promise(res=> setTimeout(res, delay)).then(()=> 
-            animatePath(hub, leafPoint, meta.key, DUR_LEAF, angle, false).then(async (leaf)=>{
-              endpointHalo(leafPoint, meta.key);
-              const dot  = endpoint(leafPoint, meta.key);
-              const node = label(item.to, leafPoint, angle);
-              await new Promise(r=> requestAnimationFrame(()=> r()));
-              try{
-                const textEl = node.querySelector('text');
-                const bb = textEl.getBBox();
-                const labelObj = labels[labels.length-1];
-                labelObj.width = Math.ceil(bb.width) + 16;
-                labelObj.height = Math.ceil(bb.height) + 8;
-              }catch(e){}
-              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
-            })
-          )
-        );
-      }
-    }
-    await Promise.all(leafPromises);
-    if(myToken !== renderToken) return;
-    resolveLabelOverlaps();
-  }
-
+  // --- helpers for geometry
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -316,29 +250,59 @@
     requestAnimationFrame(()=> requestAnimationFrame(()=> dot.classList.add("show")));
     return dot;
   }
-  function label(textStr, pos, angle){
+
+  // --- label wrapping to 2 lines
+  function twoLineSplit(s){
+    const str = String(s||"").trim();
+    if(!str) return [""];
+    const parts = str.split(/\s+/);
+    if(parts.length===1){
+      const w = parts[0];
+      if(w.length<=10) return [w];
+      const mid = Math.floor(w.length/2);
+      return [w.slice(0,mid)+"-", w.slice(mid)];
+    }
+    // balanced split
+    let best = [str, ""]; let bestScore = Infinity;
+    for(let i=1;i<parts.length;i++){
+      const l = parts.slice(0,i).join(" ");
+      const r = parts.slice(i).join(" ");
+      const score = Math.abs(l.length - r.length);
+      if(score < bestScore){ bestScore = score; best = [l, r]; }
+    }
+    return best;
+  }
+
+  function label(textStr, pos){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class", "node leaf show");
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
     const text = document.createElementNS("http://www.w3.org/2000/svg","text");
-    text.textContent = textStr;
-    const isRight = pos.x >= CENTER.x;
-    text.setAttribute("text-anchor", isRight ? "start" : "end");
-    text.setAttribute("x", isRight ? 12 : -12);
-    text.setAttribute("y", 2);
-    text.setAttribute("font-size", 14);
+    const lines = twoLineSplit(textStr);
+    const xoff = 12;
+    let dy = 2;
+    lines.forEach((ln, idx)=>{
+      const tspan = document.createElementNS("http://www.w3.org/2000/svg","tspan");
+      tspan.textContent = ln;
+      tspan.setAttribute("x", xoff);
+      tspan.setAttribute("y", dy);
+      tspan.setAttribute("font-size", 14);
+      text.appendChild(tspan);
+      dy += (idx===0 && lines.length>1) ? 16 : 0;
+    });
     g.appendChild(text);
+
     const hit = document.createElementNS("http://www.w3.org/2000/svg","rect");
-    hit.setAttribute("x", isRight ? -2 : -360+2);
-    hit.setAttribute("y", -14);
-    hit.setAttribute("width", 360);
-    hit.setAttribute("height", 28);
+    hit.setAttribute("x", -2); hit.setAttribute("y", -14);
+    hit.setAttribute("width", 360); hit.setAttribute("height", lines.length>1? 44:28);
     hit.setAttribute("fill", "transparent");
     g.appendChild(hit);
+
     $("#labels-layer").appendChild(g);
-    labels.push({ g, pos: {...pos}, width: 360, height: 28, anchor: {...pos} });
+    labels.push({ g, pos: {...pos}, width: 360, height: (lines.length>1? 44:28), anchor: {...pos} });
     return g;
   }
+
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class","stamp");
@@ -366,6 +330,7 @@
       $("#blobs-layer").appendChild(e);
     });
   }
+
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
     const enter = ()=>{ const allLinks = $("#graph-layer").querySelectorAll('.link'); allLinks.forEach(p=> p.classList.add('dim')); leaf.classList.remove('dim'); leaf.classList.add('is-highlight'); const trunk = trunks[catKey]; if(trunk){ trunk.classList.remove('dim'); trunk.classList.add('is-highlight-trunk'); } };
     const leave = ()=>{ const allLinks = $("#graph-layer").querySelectorAll('.link'); allLinks.forEach(p=> p.classList.remove('dim')); leaf.classList.remove('is-highlight'); const trunk = trunks[catKey]; if(trunk){ trunk.classList.remove('is-highlight-trunk'); } };
@@ -380,7 +345,7 @@
 
   function resolveLabelOverlaps(){
     if(labels.length < 2) return;
-    const passes = 18;
+    const passes = 24;
     for(let pass=0; pass<passes; pass++){
       for(let i=0;i<labels.length;i++){
         for(let j=i+1;j<labels.length;j++){
@@ -390,24 +355,92 @@
           const dy = overlap1D(ar.y, ar.y+ar.h, br.y, br.y+br.h);
           if(dx>0 && dy>0){
             const va = vecFromCenter(a.pos); const vb = vecFromCenter(b.pos);
-            const tangent = { x: -va.y*0.25, y: va.x*0.25 };
-            const step = 1.15 * (1 - pass/passes);
-            a.pos.x += (va.x + tangent.x)*step; a.pos.y += (va.y + tangent.y)*step;
-            b.pos.x += (vb.x - tangent.x)*step; b.pos.y += (vb.y - tangent.y)*step;
-            a.pos = clampPoint(a.pos); b.pos = clampPoint(b.pos);
+            const step = 1.2 * (1 - pass/passes);
+            a.pos.x += va.x*step; a.pos.y += va.y*step;
+            b.pos.x += vb.x*step; b.pos.y += vb.y*step;
           }
         }
       }
     }
     labels.forEach(l=>{
       l.g.setAttribute("transform", `translate(${l.pos.x},${l.pos.y})`);
-      const text = l.g.querySelector('text');
-      const isRight = l.pos.x >= CENTER.x;
-      text.setAttribute("text-anchor", isRight ? "start" : "end");
-      text.setAttribute("x", isRight ? 12 : -12);
     });
   }
-  function rectOf(l){ return { x: (l.pos.x - (l.pos.x>=CENTER.x?2:l.width-2)), y: l.pos.y-14, w: l.width, h: l.height }; }
+  function rectOf(l){ return { x: l.pos.x-2, y: l.pos.y-14, w: l.width, h: l.height }; }
   function overlap1D(a1, a2, b1, b2){ const left = Math.max(a1,b1), right = Math.min(a2,b2); return Math.max(0, right-left); }
   function vecFromCenter(p){ const dx = p.x - (1600/2), dy = p.y - (1000/2); const len = Math.hypot(dx, dy) || 1; return { x: dx/len, y: dy/len }; }
+
+  async function render(state){
+    const myToken = ++renderToken;
+    gGraph.innerHTML = ""; gLabels.innerHTML = ""; gCallouts.innerHTML = ""; gBlobs.innerHTML = ""; gStamps.innerHTML = "";
+    for(const k in trunks) delete trunks[k];
+    labels.length = 0;
+
+    const wrap = $(".canvas-wrap").getBoundingClientRect();
+    centerLabel.style.left = (wrap.width/2) + "px";
+    centerLabel.style.top  = (wrap.height/2) + "px";
+    centerLabel.textContent = state.centerKey;
+
+    const dataset = datasetFor(state.centerKey);
+    if(!dataset){ centerLabel.textContent = '—'; return; }
+
+    const groups = META.map(meta => ({
+      meta,
+      items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
+    }));
+
+    notesBox.textContent = dataset?.notes || "—";
+
+    drawBlobs();
+
+    await Promise.all(
+      groups.map(g=>{
+        const hub = clampPoint(pointOnAngle(CENTER, g.meta.angle, TRUNK_LEN));
+        g.hub = hub;
+        return animatePath(CENTER, hub, g.meta.key, DUR_TRUNK, g.meta.angle, true).then(path=>{
+          trunks[g.meta.key] = path; stampAt(hub, g.meta.key);
+        });
+      })
+    );
+    if(myToken !== renderToken) return;
+
+    const leafPromises = [];
+    for(const group of groups){
+      const { meta, items, hub } = group;
+      const count = items.length;
+      if(count === 0) continue;
+      const spread = Math.min(2.05, 0.95 + Math.log2(count+1)*0.52);
+      for(let idx=0; idx<count; idx++){
+        const item = items[idx];
+        const t = count>1 ? (idx/(count-1)) : 0.5;
+        const angle = meta.angle - spread/2 + t*spread + (Math.sin(idx*97.3)*0.06);
+        const baseR = LEAF_MIN + (LEAF_MAX-LEAF_MIN) * (0.18 + 0.72*t);
+        const jitterR = baseR * (1 + (Math.cos(idx*13.7)*0.06));
+        const leafPoint = clampPoint(pointOnAngle(CENTER, angle, jitterR));
+        const delay = Math.floor((Math.sin(idx*17.7)+1)*40);
+        leafPromises.push(
+          new Promise(res=> setTimeout(res, delay)).then(()=> 
+            animatePath(hub, leafPoint, meta.key, DUR_LEAF, angle, false).then(async (leaf)=>{
+              endpointHalo(leafPoint, meta.key);
+              const dot  = endpoint(leafPoint, meta.key);
+              const node = label(item.to, leafPoint, item.tip);
+              await new Promise(r=> requestAnimationFrame(()=> r()));
+              try{
+                const textEl = node.querySelector('text');
+                const bb = textEl.getBBox();
+                const labelObj = labels[labels.length-1];
+                labelObj.width = Math.ceil(bb.width) + 16;
+                labelObj.height = Math.ceil(bb.height) + 8;
+              }catch(e){}
+              attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
+            })
+          )
+        );
+      }
+    }
+    await Promise.all(leafPromises);
+    if(myToken !== renderToken) return;
+    resolveLabelOverlaps();
+  }
+
 })();
