@@ -1,5 +1,7 @@
 (function(){
   'use strict';
+
+  // --- globals from data.js
   const META = (window && window.CATEGORY_META) || [
     {"key":"best","angle":-1.570795,"color":"#2ecc71"},
     {"key":"good","angle":0,"color":"#f1c40f"},
@@ -17,7 +19,7 @@
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
-  let centerLabel, tooltip;
+  let centerLabel;
   let renderToken = 0;
   const trunks = {};
   const labels = [];
@@ -27,46 +29,57 @@
 
   const $ = (s, root=document)=> root.querySelector(s);
 
+  // --- key normalization/aliases to fix "lost connections"
+  const KEY_INDEX = new Map();
   const ALIASES = {
-    "маракуя":"Маракуйя", "маракуйа":"Маракуйя",
-    "кокако шоколад":"Какао/Шоколад", "какако шоколад":"Какао/Шоколад", "какао шоколад":"Какао/Шоколад",
-    "свеживе травы":"Свежие травы",
+    // frequent typos/variants from chat
     "корневица":"Корневища",
-    "тропические":"Тропические","ягоды":"Ягоды","косточковые":"Косточковые","яблоки/груши":"Яблоки/Груши",
-    "водка":"Водка","текила":"Текила","виски":"Виски","ром":"Ром",
-    "белый ром":"Светлый ром (White/Blanco)","светлый ром":"Светлый ром (White/Blanco)",
-    "золотой ром":"Золотой ром (Gold/Oro)",
-    "темный ром":"Тёмный ром (Dark/Black)","тёмный ром":"Тёмный ром (Dark/Black)",
-    "спайсед ром":"Пряный ром (Spiced)","пряный ром":"Пряный ром (Spiced)",
-    "офтд":"Оверпруф ром (Overproof)","overproof":"Оверпруф ром (Overproof)",
-    "агриколь":"Агриколь ром — Blanc","agricole":"Агриколь ром — Blanc"
+    "кокако шоколад":"Какао/Шоколад",
+    "свеживе травы":"Свежие травы",
+    "тропические":"Тропические",
+    "ягоды":"Ягоды",
+    "яблоки груши":"Яблоки/Груши",
+    "красный виноград":"Красный виноград",
+    "белый виноград":"Белый виноград",
+    "водка чистая":"Чистая",
+    "водка вкусовая":"Вкусовая",
+    "водка ароматическая":"Ароматическая",
+    "ром светлый":"Светлый ром",
+    "ром золотой":"Золотой ром",
+    "ром темный":"Тёмный ром",
+    "агриколь blanc":"Ром агриколь — Blanc",
+    "агриколь vieux":"Ром агриколь — Vieux/VSOP",
   };
-  function normalizeKey(s){
-    if(!s) return s;
-    const k = String(s).trim();
-    const low = k.toLowerCase();
-    return ALIASES[low] || k;
+  function canon(s){
+    return String(s||"").toLowerCase()
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'') // strip diacritics
+      .replace(/[–—−]/g,'-')
+      .replace(/[“”«»]/g,'"')
+      .replace(/\s*\/\s*/g,' / ')
+      .replace(/\s+/g,' ')
+      .trim();
   }
-  function isCategory(key){ return (TAXO.categories||[]).includes(key); }
+  function buildKeyIndex(){
+    const add = (k)=>{ if(!k) return; const c = canon(k); if(!KEY_INDEX.has(c)) KEY_INDEX.set(c, k); };
+    (TAXO.categories||[]).forEach(add);
+    Object.entries(TAXO.groups||{}).forEach(([cat, grps])=>{ add(cat); (grps||[]).forEach(add); });
+    Object.entries(TAXO.subgroups||{}).forEach(([grp, subs])=>{ add(grp); (subs||[]).forEach(add); });
+    Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{ add(sub); (arr||[]).forEach(add); });
+    Object.keys(window.FLAVOR_DATA||{}).forEach(add);
+    Object.entries(ALIASES).forEach(([a, real])=> KEY_INDEX.set(canon(a), real));
+  }
+  function realKey(k){ return KEY_INDEX.get(canon(k)) || k; }
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init(){
     svg = $("#canvas");
-    if(!svg){
-      showError("Не найден <svg id=\"canvas\">");
-      return;
-    }
+    if(!svg){ return; }
     search = $("#search");
     notesBox = $("#notes");
-    tooltip = $("#tooltip");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
 
-    if(!window.TAXONOMY || !window.CATEGORY_META){
-      showError("data.js не загрузился: проверь синтаксис (лишние символы, экранирование, запятая).");
-      return;
-    }
-
+    buildKeyIndex();
     buildReverseIndex();
 
     centerLabel = document.createElement("div");
@@ -82,27 +95,26 @@
     svg.addEventListener("wheel", e => e.preventDefault(), { passive:false });
     svg.addEventListener("mousedown", e => e.preventDefault());
 
-    // taxonomy
+    // taxonomy selects
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
     fillSelect(groupSel, ['Не выбрано']);
     fillSelect(subSel, ['Не выбрано']);
     fillSelect(nameSel, ['Не выбрано']);
 
+    // Category: do NOT render wheel (as requested). Only populate next selects.
     catSel.addEventListener('change', ()=>{
       const cat = catSel.value;
       const groups = TAXO.groups[cat] || [];
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      // категорию НЕ рендерим
-      clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
+      clearAndMessage('Выбери группу / подгруппу / наименование.');
     });
     groupSel.addEventListener('change', ()=>{
       const grp = groupSel.value;
       const subs = TAXO.subgroups[grp] || [];
       fillSelect(subSel, ['Не выбрано', ...subs]);
       fillSelect(nameSel, ['Не выбрано']);
-
       if(grp !== 'Не выбрано') { render({ centerKey: grp }); }
       else clearAndMessage('Выбери подгруппу или наименование…');
     });
@@ -114,34 +126,30 @@
       else clearAndMessage('Выбери наименование…');
     });
     nameSel.addEventListener('change', ()=>{
-      let nm = nameSel.value;
-      nm = normalizeKey(nm);
+      const nm = nameSel.value;
       if(nm !== 'Не выбрано'){ backFill(nm); render({ centerKey: nm }); }
       else clearAndMessage('—');
     });
 
     // omni-search
     search?.addEventListener("input", ()=>{
-      const q0 = (search.value || "").trim();
-      if(!q0){ return; }
-      const q = normalizeKey(q0).toLowerCase();
-      const keys = allSearchKeys();
-      const match = keys.find(k => String(k).toLowerCase().includes(q));
-      if (match && !isCategory(match)) { backFill(match); render({ centerKey: match }); }
+      const q = (search.value || "").trim().toLowerCase();
+      if(!q){ return; }
+      const c = canon(q);
+      let key = KEY_INDEX.get(c);
+      if(!key){
+        // prefix/substring match
+        const cand = Array.from(KEY_INDEX.keys()).find(k => k.includes(c));
+        if(cand) key = KEY_INDEX.get(cand);
+      }
+      if(key){ backFill(key); render({ centerKey: key }); }
     });
 
-    clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
-  }
-
-  function showError(msg){
-    const box = $("#err");
-    if(!box) return;
-    box.textContent = msg;
-    box.hidden = false;
+    clearAndMessage('Выбери группу / подгруппу / наименование.');
   }
 
   function backFill(nameOrKey){
-    const key = normalizeKey(nameOrKey);
+    const key = realKey(nameOrKey);
     const sub = reverseIdx.nameToSub[key];
     const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
     const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
@@ -155,7 +163,7 @@
       subSel.value = sub;
       const names = TAXO.names[sub] || [];
       fillSelect(nameSel, ['Не выбрано', ...names]);
-      if((TAXO.names[sub]||[]).includes(key)) nameSel.value = key;
+      if((TAXO.names[sub]||[]).includes(nameOrKey)) nameSel.value = nameOrKey;
     }else{
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
@@ -209,7 +217,7 @@
     notesBox.textContent = '—';
   }
 
-  // data helpers
+  // --- data helpers (robust lookup w/ normalization)
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
@@ -224,7 +232,8 @@
     });
     if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
-  function aggregateFromChildren(key){
+  function aggregateFromChildren(keyRaw){
+    const key = realKey(keyRaw);
     const agg = cloneEmpty();
     if(TAXO.names[key]){ // subgroup -> collect children names
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
@@ -240,7 +249,8 @@
     }
     return null;
   }
-  function aggregateFromParents(key){
+  function aggregateFromParents(keyRaw){
+    const key = realKey(keyRaw);
     const agg = cloneEmpty();
     const sub = reverseIdx.nameToSub[key];
     const grpViaSub = sub ? reverseIdx.subToGroup[sub] : null;
@@ -257,8 +267,8 @@
     }
     return nonEmpty(agg) ? agg : null;
   }
-  function datasetFor(key){
-    if(isCategory(key)) return cloneEmpty(); // категории не рендерим
+  function datasetFor(keyRaw){
+    const key = realKey(keyRaw);
     const ds = window.FLAVOR_DATA[key];
     if(nonEmpty(ds)) return ds;
     const down = aggregateFromChildren(key);
@@ -267,7 +277,7 @@
     return up || ds || cloneEmpty();
   }
 
-  // geometry
+  // --- geometry
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -338,7 +348,7 @@
     return dot;
   }
 
-  // two-line label split
+  // --- 2-line label
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
@@ -350,7 +360,8 @@
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
-    let best = [str, ""]; let bestScore = Infinity;
+    // balanced split
+    let best = [str, ""], bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
       const r = parts.slice(i).join(" ");
@@ -440,12 +451,13 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
-    const validTarget = targetKey && (reverseIdx.nameToSub[targetKey] || reverseIdx.subToGroup[targetKey] || reverseIdx.groupToCat[targetKey] || (window.FLAVOR_DATA && window.FLAVOR_DATA[targetKey] && (window.FLAVOR_DATA[targetKey].best?.length || window.FLAVOR_DATA[targetKey].good?.length || window.FLAVOR_DATA[targetKey].bad?.length || window.FLAVOR_DATA[targetKey].unexpected?.length)));
-    if(validTarget){
-      const activate = ()=>{ if(targetKey && !isCategory(targetKey)){ backFill(targetKey); render({ centerKey: targetKey }); } };
-      node.addEventListener("click", activate);
-      dot.addEventListener("click", activate);
-    }
+    const activate = ()=>{
+      if(targetKey && KEY_INDEX.has(canon(targetKey))){
+        backFill(targetKey); render({ centerKey: targetKey });
+      }
+    };
+    node.addEventListener("click", activate);
+    dot.addEventListener("click", activate);
   }
 
   function resolveLabelOverlaps(){
@@ -489,17 +501,13 @@
     centerLabel.textContent = state.centerKey;
 
     const dataset = datasetFor(state.centerKey);
-    if(!dataset || (!dataset.best?.length && !dataset.good?.length && !dataset.bad?.length && !dataset.unexpected?.length)){
-      centerLabel.textContent = state.centerKey + ' — нет данных';
-      return;
-    }
-
+    // even if dataset empty, we still draw trunks so user sees structure
     const groups = META.map(meta => ({
       meta,
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    notesBox.textContent = dataset?.notes || "—";
+    notesBox.textContent = dataset && dataset.notes ? dataset.notes : "—";
 
     drawBlobs();
 
@@ -543,7 +551,7 @@
                   labelObj.width = Math.ceil(bb.width) + 16;
                   labelObj.height = Math.ceil(bb.height) + 8;
                 }
-              }catch(e){ /* swallow */ }
+              }catch(e){ /* safe */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
