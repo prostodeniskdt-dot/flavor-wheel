@@ -11,7 +11,7 @@
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
-  let centerLabel, tooltip, errBox;
+  let centerLabel, tooltip;
   let renderToken = 0;
   const trunks = {};
   const labels = [];
@@ -23,27 +23,12 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
-  function assertTaxonomy(){
-    if(!TAXO || !TAXO.categories || !TAXO.subgroups || !TAXO.names){
-      if(errBox){
-        errBox.textContent = "Ошибка: TAXONOMY не загружен. Проверь data.js (синтаксис и порядок подключения).";
-        errBox.hidden = false;
-      }
-      return false;
-    }
-    if(errBox) errBox.hidden = true;
-    return true;
-  }
-
   function init(){
     svg = $("#canvas");
     search = $("#search");
     notesBox = $("#notes");
     tooltip = $("#tooltip");
-    errBox = $("#err");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
-
-    if(!assertTaxonomy()) return;
 
     buildReverseIndex();
 
@@ -154,7 +139,7 @@
     centerLabel.textContent = msg;
     const wrap = $(".canvas-wrap").getBoundingClientRect();
     centerLabel.style.left = (wrap.width/2) + "px"; centerLabel.style.top = (wrap.height/2) + "px";
-    if(notesBox) notesBox.textContent = '—';
+    notesBox.textContent = '—';
   }
 
   // data helpers
@@ -169,19 +154,19 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(window.TAXONOMY.names[key]){ // subgroup -> collect children names
-      (window.TAXONOMY.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+    if(TAXO.names[key]){ // subgroup -> collect children names
+      (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(window.TAXONOMY.subgroups[key]){ // group -> collect subgroups and names
-      (window.TAXONOMY.subgroups[key]||[]).forEach(sub=>{
+    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
+      (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
-        (window.TAXONOMY.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+        (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       });
       return nonEmpty(agg)? agg : null;
     }
@@ -268,9 +253,10 @@
   // --- label wrapping to 2 lines (safe & stable)
   function twoLineSplit(s){
     const str = String(s||"").trim();
-    if(!str) return [""];
-    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
-    const parts = norm.trim().split(/\s+/);
+    if(!str) return ["" ];
+    // normalize separators to help splits: space around slashes/dashes
+    const norm = str.replace(/\\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=12) return [w];
@@ -278,7 +264,7 @@
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
     // balanced split
-    let best = [str, ""]; let bestScore = Infinity;
+    let best = [str, "" ]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
       const r = parts.slice(i).join(" ");
@@ -422,7 +408,7 @@
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    if(notesBox) notesBox.textContent = dataset && dataset.notes ? dataset.notes : "—";
+    notesBox.textContent = dataset?.notes || "—";
 
     drawBlobs();
 
