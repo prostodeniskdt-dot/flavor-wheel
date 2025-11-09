@@ -11,7 +11,7 @@
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
-  let centerLabel, tooltip;
+  let centerLabel, tooltip, errBox;
   let renderToken = 0;
   const trunks = {};
   const labels = [];
@@ -23,12 +23,27 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
+  function assertTaxonomy(){
+    if(!TAXO || !TAXO.categories || !TAXO.subgroups || !TAXO.names){
+      if(errBox){
+        errBox.textContent = "Ошибка: TAXONOMY не загружен. Проверь data.js (синтаксис и порядок подключения).";
+        errBox.hidden = false;
+      }
+      return false;
+    }
+    if(errBox) errBox.hidden = true;
+    return true;
+  }
+
   function init(){
     svg = $("#canvas");
     search = $("#search");
     notesBox = $("#notes");
     tooltip = $("#tooltip");
+    errBox = $("#err");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
+
+    if(!assertTaxonomy()) return;
 
     buildReverseIndex();
 
@@ -139,7 +154,7 @@
     centerLabel.textContent = msg;
     const wrap = $(".canvas-wrap").getBoundingClientRect();
     centerLabel.style.left = (wrap.width/2) + "px"; centerLabel.style.top = (wrap.height/2) + "px";
-    notesBox.textContent = '—';
+    if(notesBox) notesBox.textContent = '—';
   }
 
   // data helpers
@@ -158,15 +173,15 @@
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names
-      (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+    if(window.TAXONOMY.names[key]){ // subgroup -> collect children names
+      (window.TAXONOMY.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
-      (TAXO.subgroups[key]||[]).forEach(sub=>{
+    if(window.TAXONOMY.subgroups[key]){ // group -> collect subgroups and names
+      (window.TAXONOMY.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
-        (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+        (window.TAXONOMY.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       });
       return nonEmpty(agg)? agg : null;
     }
@@ -254,7 +269,6 @@
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    // normalize separators to help splits: space around slashes/dashes
     const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
     const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
@@ -408,7 +422,7 @@
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    notesBox.textContent = dataset?.notes || "—";
+    if(notesBox) notesBox.textContent = dataset && dataset.notes ? dataset.notes : "—";
 
     drawBlobs();
 
