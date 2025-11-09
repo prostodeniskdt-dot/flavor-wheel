@@ -1,6 +1,5 @@
 (function(){
   const META = window.CATEGORY_META;
-  const DATA = window.FLAVOR_DATA;
   const TAXO = window.TAXONOMY;
 
   const VB_W = 1600, VB_H = 1000;
@@ -20,7 +19,7 @@
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
-  function $(s, root=document){ return root.querySelector(s); }
+  const $ = (s, root=document)=> root.querySelector(s);
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -81,20 +80,20 @@
       else clearAndMessage('—');
     });
 
-    // omni-search (bugfix: remove stray label "ifmatch", handle slashes/dashes)
+    // omni-search
     const allKeys = ()=> Object.keys(window.FLAVOR_DATA||{});
     search.addEventListener("input", ()=>{
-      const q = search.value.trim().toLowerCase();
+      const q = (search.value || "").trim().toLowerCase();
       if(!q){ return; }
       const match = allKeys().find(k => k.toLowerCase().includes(q));
-      if (match){ backFill(match); render({ centerKey: match }); }
+      if (match) { backFill(match); render({ centerKey: match }); }
     });
 
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
   }
 
   function backFill(nameOrKey){
-    let key = nameOrKey;
+    const key = nameOrKey;
     const sub = reverseIdx.nameToSub[key];
     const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
     const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
@@ -143,6 +142,7 @@
     notesBox.textContent = '—';
   }
 
+  // data helpers
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
@@ -154,15 +154,15 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup
+    if(TAXO.names[key]){ // subgroup -> collect children names
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group
+    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
       (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
@@ -179,7 +179,7 @@
     return agg || ds || cloneEmpty();
   }
 
-  // --- helpers for geometry
+  // geometry
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -218,7 +218,7 @@
       path.setAttribute("d", cubicFrom(a,b,ang));
       const classes = ['link', `link-${cat}`, isTrunk?'link-trunk':'link-leaf'];
       path.setAttribute("class", classes.join(' '));
-      $("#graph-layer").appendChild(path);
+      gGraph.appendChild(path);
       const len = path.getTotalLength();
       path.style.strokeDasharray = `${len} ${len}`;
       path.style.strokeDashoffset = `${len}`;
@@ -238,26 +238,28 @@
     const halo = document.createElementNS("http://www.w3.org/2000/svg","circle");
     halo.setAttribute("cx", p.x); halo.setAttribute("cy", p.y); halo.setAttribute("r", 10);
     halo.setAttribute("class", `dot-halo endpoint-${cat}`);
-    $("#graph-layer").appendChild(halo);
+    gGraph.appendChild(halo);
     return halo;
   }
   function endpoint(p, cat){
     const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
     dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y); dot.setAttribute("r", 6.5);
     dot.setAttribute("class", `endpoint endpoint-${cat}`);
-    $("#graph-layer").appendChild(dot);
+    gGraph.appendChild(dot);
     requestAnimationFrame(()=> requestAnimationFrame(()=> dot.classList.add("show")));
     return dot;
   }
 
-  // --- label wrapping to 2 lines (aware of slashes/dashes)
+  // --- label wrapping to 2 lines (safe & stable)
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    const parts = str.replace(/[-/]/g,' ').split(/\s+/);
+    // normalize separators to help splits: space around slashes/dashes
+    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
       const w = parts[0];
-      if(w.length<=10) return [w];
+      if(w.length<=12) return [w];
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
@@ -277,6 +279,7 @@
     g.setAttribute("class", "node leaf show");
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
     const text = document.createElementNS("http://www.w3.org/2000/svg","text");
+    text.setAttribute("text-anchor","start");
     const lines = twoLineSplit(textStr);
     const xoff = 12;
     let dy = 2;
@@ -287,18 +290,19 @@
       tspan.setAttribute("y", dy);
       tspan.setAttribute("font-size", 14);
       text.appendChild(tspan);
-      dy += (idx===0 && lines.length>1) ? 16 : 0;
+      if(idx===0 && lines.length>1) dy += 16;
     });
     g.appendChild(text);
 
+    const height = (lines.length>1? 44:28);
     const hit = document.createElementNS("http://www.w3.org/2000/svg","rect");
     hit.setAttribute("x", -2); hit.setAttribute("y", -14);
-    hit.setAttribute("width", 360); hit.setAttribute("height", lines.length>1? 44:28);
+    hit.setAttribute("width", 360); hit.setAttribute("height", height);
     hit.setAttribute("fill", "transparent");
     g.appendChild(hit);
 
-    $("#labels-layer").appendChild(g);
-    labels.push({ g, pos: {...pos}, width: 360, height: (lines.length>1? 44:28), anchor: {...pos} });
+    gLabels.appendChild(g);
+    labels.push({ g, pos: {...pos}, width: 360, height, anchor: {...pos} });
     return g;
   }
 
@@ -312,8 +316,9 @@
     let icon = "•"; if(catKey==='best') icon="★"; else if(catKey==='unexpected') icon="!"; else if(catKey==='good') icon="➜";
     t.textContent = icon;
     g.appendChild(c); g.appendChild(t);
-    $("#stamps-layer").appendChild(g);
+    gStamps.appendChild(g);
   }
+
   function drawBlobs(){
     const blobSpec = [
       {key:'best', x: CENTER.x, y: CENTER.y-240, rx: 240, ry: 140},
@@ -326,13 +331,25 @@
       e.setAttribute("cx", b.x); e.setAttribute("cy", b.y);
       e.setAttribute("rx", b.rx); e.setAttribute("ry", b.ry);
       e.setAttribute("class", `blob blob-${b.key}`);
-      $("#blobs-layer").appendChild(e);
+      gBlobs.appendChild(e);
     });
   }
 
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
-    const enter = ()=>{ const allLinks = $("#graph-layer").querySelectorAll('.link'); allLinks.forEach(p=> p.classList.add('dim')); leaf.classList.remove('dim'); leaf.classList.add('is-highlight'); const trunk = trunks[catKey]; if(trunk){ trunk.classList.remove('dim'); trunk.classList.add('is-highlight-trunk'); } };
-    const leave = ()=>{ const allLinks = $("#graph-layer").querySelectorAll('.link'); allLinks.forEach(p=> p.classList.remove('dim')); leaf.classList.remove('is-highlight'); const trunk = trunks[catKey]; if(trunk){ trunk.classList.remove('is-highlight-trunk'); } };
+    const enter = ()=>{
+      const allLinks = gGraph.querySelectorAll('.link');
+      allLinks.forEach(p=> p.classList.add('dim'));
+      leaf.classList.remove('dim'); leaf.classList.add('is-highlight');
+      const trunk = trunks[catKey];
+      if(trunk){ trunk.classList.remove('dim'); trunk.classList.add('is-highlight-trunk'); }
+    };
+    const leave = ()=>{
+      const allLinks = gGraph.querySelectorAll('.link');
+      allLinks.forEach(p=> p.classList.remove('dim'));
+      leaf.classList.remove('is-highlight');
+      const trunk = trunks[catKey];
+      if(trunk){ trunk.classList.remove('is-highlight-trunk'); }
+    };
     node.addEventListener("mouseenter", enter);
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
@@ -344,7 +361,7 @@
 
   function resolveLabelOverlaps(){
     if(labels.length < 2) return;
-    const passes = 24;
+    const passes = 28;
     for(let pass=0; pass<passes; pass++){
       for(let i=0;i<labels.length;i++){
         for(let j=i+1;j<labels.length;j++){
@@ -354,9 +371,12 @@
           const dy = overlap1D(ar.y, ar.y+ar.h, br.y, br.y+br.h);
           if(dx>0 && dy>0){
             const va = vecFromCenter(a.pos); const vb = vecFromCenter(b.pos);
-            const step = 1.2 * (1 - pass/passes);
+            const step = 1.15 * (1 - pass/passes);
             a.pos.x += va.x*step; a.pos.y += va.y*step;
             b.pos.x += vb.x*step; b.pos.y += vb.y*step;
+            // clamp after push to keep inside stage
+            a.pos = clampPoint(a.pos);
+            b.pos = clampPoint(b.pos);
           }
         }
       }
@@ -422,15 +442,17 @@
             animatePath(hub, leafPoint, meta.key, DUR_LEAF, angle, false).then(async (leaf)=>{
               endpointHalo(leafPoint, meta.key);
               const dot  = endpoint(leafPoint, meta.key);
-              const node = label(item.to, leafPoint, item.tip);
+              const node = label(item.to, leafPoint);
               await new Promise(r=> requestAnimationFrame(()=> r()));
               try{
                 const textEl = node.querySelector('text');
-                const bb = textEl.getBBox();
-                const labelObj = labels[labels.length-1];
-                labelObj.width = Math.ceil(bb.width) + 16;
-                labelObj.height = Math.ceil(bb.height) + 8;
-              }catch(e){}
+                if (textEl && textEl.getBBox) {
+                  const bb = textEl.getBBox();
+                  const labelObj = labels[labels.length-1];
+                  labelObj.width = Math.ceil(bb.width) + 16;
+                  labelObj.height = Math.ceil(bb.height) + 8;
+                }
+              }catch(e){ /* swallow */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
