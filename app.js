@@ -25,11 +25,10 @@
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
-  // --- zoom/pan state (applies to all layers together)
   const zoom = { scale: 1, min: 0.8, max: 3.0, x: 0, y: 0 };
   let isPanning = false;
   let lastPan = {x:0,y:0};
-  let pinch = null; // {startD, startS, cx, cy, activeIds, points}
+  let pinch = null;
 
   const $ = (s, root=document)=> root.querySelector(s);
 
@@ -38,7 +37,7 @@
   function init(){
     svg = $("#canvas");
     if(!svg){
-      showError("Не найден <svg id=\\\"canvas\\\">");
+      showError("Не найден <svg id=\"canvas\">");
       return;
     }
     search = $("#search");
@@ -64,10 +63,8 @@
     gBlobs    = $("#blobs-layer");
     gStamps   = $("#stamps-layer");
 
-    // Колесо: ctrl/cmd + колесо — масштаб; без модификаторов — обычный скролл страницы
     svg.addEventListener("wheel", onWheel, { passive:false });
 
-    // taxonomy
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
     fillSelect(groupSel, ['Не выбрано']);
     fillSelect(subSel, ['Не выбрано']);
@@ -79,7 +76,6 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      // Для категорий колесо НЕ строим
       clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
       scrollCanvasIntoView();
     });
@@ -107,7 +103,6 @@
       scrollCanvasIntoView();
     });
 
-    // omni-search
     search?.addEventListener("input", ()=>{
       const q = (search.value || "").trim().toLowerCase();
       if(!q){ return; }
@@ -121,15 +116,12 @@
       }
     });
 
-    // touch & pointer handlers for pinch-zoom and pan
     setupTouchHandlers();
 
-    // zoom buttons
     zoomInBtn?.addEventListener('click', ()=> zoomTo(zoom.scale*1.14));
     zoomOutBtn?.addEventListener('click', ()=> zoomTo(zoom.scale/1.14));
     zoomResetBtn?.addEventListener('click', ()=> { zoom.scale=1; zoom.x=0; zoom.y=0; applyZoomTransform(); });
 
-    // Начальное увеличение на узких экранах
     if (window.matchMedia && window.matchMedia("(max-width: 960px)").matches){
       zoom.scale = 1.22;
     }
@@ -140,7 +132,9 @@
 
   function updateTouchAction(){
     if (!svg) return;
-    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'pinch-zoom');
+    // Даем жесты браузера для естественного pinch-zoom,
+    // но блокируем горизонтальный скролл когда увеличено и мы паним SVG
+    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'none');
   }
 
   function zoomTo(next){
@@ -348,7 +342,7 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
@@ -408,7 +402,6 @@
     return { x, y };
   }
 
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
   function seeded(n){ let x = Math.sin(n)*10000; return x - Math.floor(x); }
   function cubicFrom(a, b, startAngle){
     const dx = b.x - a.x, dy = b.y - a.y;
@@ -467,8 +460,8 @@
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    const norm = str.replace(/\\//g,' / ').replace(/-/g,' - ');
-    const parts = norm.trim().split(/\\s+/);
+    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=12) return [w];
