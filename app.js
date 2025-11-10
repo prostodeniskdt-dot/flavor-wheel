@@ -25,11 +25,10 @@
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
-  // --- zoom/pan state (applies to all layers together)
   const zoom = { scale: 1, min: 0.8, max: 3.0, x: 0, y: 0 };
   let isPanning = false;
   let lastPan = {x:0,y:0};
-  let pinch = null; // {startD, startS, cx, cy, activeIds, points}
+  let pinch = null;
 
   const $ = (s, root=document)=> root.querySelector(s);
 
@@ -64,10 +63,8 @@
     gBlobs    = $("#blobs-layer");
     gStamps   = $("#stamps-layer");
 
-    // Колесо: ctrl/cmd + колесо — масштаб; без модификаторов — обычный скролл страницы
     svg.addEventListener("wheel", onWheel, { passive:false });
 
-    // taxonomy
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
     fillSelect(groupSel, ['Не выбрано']);
     fillSelect(subSel, ['Не выбрано']);
@@ -79,7 +76,6 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      // Для категорий колесо НЕ строим
       clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
       scrollCanvasIntoView();
     });
@@ -107,7 +103,6 @@
       scrollCanvasIntoView();
     });
 
-    // omni-search
     search?.addEventListener("input", ()=>{
       const q = (search.value || "").trim().toLowerCase();
       if(!q){ return; }
@@ -121,15 +116,12 @@
       }
     });
 
-    // touch & pointer handlers for pinch-zoom and pan
     setupTouchHandlers();
 
-    // zoom buttons
     zoomInBtn?.addEventListener('click', ()=> zoomTo(zoom.scale*1.14));
     zoomOutBtn?.addEventListener('click', ()=> zoomTo(zoom.scale/1.14));
     zoomResetBtn?.addEventListener('click', ()=> { zoom.scale=1; zoom.x=0; zoom.y=0; applyZoomTransform(); });
 
-    // Начальное увеличение на узких экранах
     if (window.matchMedia && window.matchMedia("(max-width: 960px)").matches){
       zoom.scale = 1.22;
     }
@@ -140,7 +132,8 @@
 
   function updateTouchAction(){
     if (!svg) return;
-    svg.style.touchAction = (zoom.scale <= 1 ? 'auto' : 'none');
+    // В нормальном масштабе — не мешаем вертикальной прокрутке страницы
+    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'none');
   }
 
   function zoomTo(next){
@@ -254,7 +247,7 @@
 
   function scrollCanvasIntoView(){
     const wrap = $(".canvas-wrap");
-    try{ wrap?.scrollIntoView({behavior:'smooth', block:'nearest'}); }catch(e){/* no-op */}
+    try{ wrap?.scrollIntoView({behavior:'smooth', block:'nearest'}); }catch(e){}
   }
 
   function isCategory(key){ return (TAXO.categories||[]).includes(key); }
@@ -290,15 +283,9 @@
 
   function buildReverseIndex(){
     const idx = reverseIdx;
-    Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{
-      (arr||[]).forEach(n=> idx.nameToSub[n]=sub);
-    });
-    Object.entries(TAXO.subgroups||{}).forEach(([grp, arr])=>{
-      (arr||[]).forEach(s=> idx.subToGroup[s]=grp);
-    });
-    Object.entries(TAXO.groups||{}).forEach(([cat, arr])=>{
-      (arr||[]).forEach(g=> idx.groupToCat[g]=cat);
-    });
+    Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{ (arr||[]).forEach(n=> idx.nameToSub[n]=sub); });
+    Object.entries(TAXO.subgroups||{}).forEach(([grp, arr])=>{ (arr||[]).forEach(s=> idx.subToGroup[s]=grp); });
+    Object.entries(TAXO.groups||{}).forEach(([cat, arr])=>{ (arr||[]).forEach(g=> idx.groupToCat[g]=cat); });
   }
 
   function allSearchKeys(){
@@ -335,7 +322,6 @@
     notesBox.textContent = '—';
   }
 
-  // data helpers
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
@@ -352,11 +338,11 @@
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names
+    if(TAXO.names[key]){
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
+    if(TAXO.subgroups[key]){
       (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
@@ -392,7 +378,6 @@
     return up || ds || cloneEmpty();
   }
 
-  // geometry
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -534,7 +519,8 @@
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class","stamp");
-    const c = document.createElementNS("http://www.w3.org/200/svg","circle");
+    // FIX: correct SVG namespace (was 200/svg)
+    const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
     c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
     const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
