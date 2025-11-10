@@ -1,7 +1,32 @@
 (function(){
   'use strict';
 
-  // --- globals from data.js
+  // === Canonicalization helpers & alias map ===
+  const ALIASES = {
+    "корневица": "Корневища",
+    "кокако шоколад": "Какао/Шоколад",
+    "свеживе травы": "Свежие травы",
+    "сухие ингридиенты": "Сухие ингредиенты",
+    "грейпфруты": "Грейпфрут",
+  };
+  function canon(s){
+    if(s==null) return "";
+    let str = String(s).normalize('NFKC')
+      .replace(/[–—−]/g,'-')
+      .replace(/\s*\/\s*/g, '/')
+      .replace(/\s+/g,' ')
+      .trim()
+      .toLowerCase()
+      .replace(/ё/g,'е');
+    return str;
+  }
+  function realKey(k){
+    const c0 = canon(k);
+    const aliased = ALIASES[c0] || k;
+    const c = canon(aliased);
+    return KEY_INDEX[c] || aliased; // fall back to aliased original if not in index
+  }
+
   const META = (window && window.CATEGORY_META) || [
     {"key":"best","angle":-1.570795,"color":"#2ecc71"},
     {"key":"good","angle":0,"color":"#f1c40f"},
@@ -26,58 +51,26 @@
 
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
+  let KEY_INDEX = {}; // canon -> original
 
   const $ = (s, root=document)=> root.querySelector(s);
-
-  // --- key normalization/aliases to fix "lost connections"
-  const KEY_INDEX = new Map();
-  const ALIASES = {
-    // frequent typos/variants from chat
-    "корневица":"Корневища",
-    "кокако шоколад":"Какао/Шоколад",
-    "свеживе травы":"Свежие травы",
-    "тропические":"Тропические",
-    "ягоды":"Ягоды",
-    "яблоки груши":"Яблоки/Груши",
-    "красный виноград":"Красный виноград",
-    "белый виноград":"Белый виноград",
-    "водка чистая":"Чистая",
-    "водка вкусовая":"Вкусовая",
-    "водка ароматическая":"Ароматическая",
-    "ром светлый":"Светлый ром",
-    "ром золотой":"Золотой ром",
-    "ром темный":"Тёмный ром",
-    "агриколь blanc":"Ром агриколь — Blanc",
-    "агриколь vieux":"Ром агриколь — Vieux/VSOP",
-  };
-  function canon(s){
-    return String(s||"").toLowerCase()
-      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'') // strip diacritics
-      .replace(/[–—−]/g,'-')
-      .replace(/[“”«»]/g,'"')
-      .replace(/\s*\/\s*/g,' / ')
-      .replace(/\s+/g,' ')
-      .trim();
-  }
-  function buildKeyIndex(){
-    const add = (k)=>{ if(!k) return; const c = canon(k); if(!KEY_INDEX.has(c)) KEY_INDEX.set(c, k); };
-    (TAXO.categories||[]).forEach(add);
-    Object.entries(TAXO.groups||{}).forEach(([cat, grps])=>{ add(cat); (grps||[]).forEach(add); });
-    Object.entries(TAXO.subgroups||{}).forEach(([grp, subs])=>{ add(grp); (subs||[]).forEach(add); });
-    Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{ add(sub); (arr||[]).forEach(add); });
-    Object.keys(window.FLAVOR_DATA||{}).forEach(add);
-    Object.entries(ALIASES).forEach(([a, real])=> KEY_INDEX.set(canon(a), real));
-  }
-  function realKey(k){ return KEY_INDEX.get(canon(k)) || k; }
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init(){
     svg = $("#canvas");
-    if(!svg){ return; }
+    if(!svg){
+      showError("Не найден <svg id=\"canvas\">");
+      return;
+    }
     search = $("#search");
     notesBox = $("#notes");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
+
+    if(!window.TAXONOMY || !window.CATEGORY_META){
+      showError("data.js не загрузился: проверь синтаксис.");
+      return;
+    }
 
     buildKeyIndex();
     buildReverseIndex();
@@ -95,20 +88,20 @@
     svg.addEventListener("wheel", e => e.preventDefault(), { passive:false });
     svg.addEventListener("mousedown", e => e.preventDefault());
 
-    // taxonomy selects
+    // taxonomy UI
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
     fillSelect(groupSel, ['Не выбрано']);
     fillSelect(subSel, ['Не выбрано']);
     fillSelect(nameSel, ['Не выбрано']);
 
-    // Category: do NOT render wheel (as requested). Only populate next selects.
     catSel.addEventListener('change', ()=>{
       const cat = catSel.value;
       const groups = TAXO.groups[cat] || [];
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      clearAndMessage('Выбери группу / подгруппу / наименование.');
+      // Категорию не отображаем колесом — просили отключить
+      clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
     });
     groupSel.addEventListener('change', ()=>{
       const grp = groupSel.value;
@@ -131,21 +124,53 @@
       else clearAndMessage('—');
     });
 
-    // omni-search
+    // omni-search (терпит опечатки и регистр)
     search?.addEventListener("input", ()=>{
-      const q = (search.value || "").trim().toLowerCase();
+      const q = (search.value || "").trim();
       if(!q){ return; }
-      const c = canon(q);
-      let key = KEY_INDEX.get(c);
-      if(!key){
-        // prefix/substring match
-        const cand = Array.from(KEY_INDEX.keys()).find(k => k.includes(c));
-        if(cand) key = KEY_INDEX.get(cand);
-      }
-      if(key){ backFill(key); render({ centerKey: key }); }
+      const cq = canon(q);
+      const keys = allSearchKeys();
+      const match = keys.find(k => canon(k).includes(cq));
+      if (match) { backFill(match); render({ centerKey: match }); }
     });
 
-    clearAndMessage('Выбери группу / подгруппу / наименование.');
+    clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
+  }
+
+  function showError(msg){
+    const box = $("#err");
+    if(!box) return;
+    box.textContent = msg;
+    box.hidden = false;
+  }
+
+  function buildKeyIndex(){
+    KEY_INDEX = {};
+    // categories
+    (TAXO.categories||[]).forEach(c=> KEY_INDEX[canon(c)] = c);
+    // groups
+    Object.entries(TAXO.groups||{}).forEach(([cat, groups])=>{
+      (groups||[]).forEach(g=> KEY_INDEX[canon(g)] = g);
+    });
+    // subgroups
+    Object.entries(TAXO.subgroups||{}).forEach(([grp, subs])=>{
+      KEY_INDEX[canon(grp)] = grp;
+      (subs||[]).forEach(s=> KEY_INDEX[canon(s)] = s);
+    });
+    // names (leaf names)
+    Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{
+      KEY_INDEX[canon(sub)] = sub;
+      (arr||[]).forEach(n=> KEY_INDEX[canon(n)] = n);
+    });
+    // FLAVOR_DATA keys
+    Object.keys(window.FLAVOR_DATA||{}).forEach(k=>{
+      KEY_INDEX[canon(k)] = k;
+    });
+    // add aliases
+    Object.entries(ALIASES).forEach(([wrong, right])=>{
+      const r = KEY_INDEX[canon(right)] || right;
+      KEY_INDEX[canon(wrong)] = r;
+    });
   }
 
   function backFill(nameOrKey){
@@ -163,7 +188,8 @@
       subSel.value = sub;
       const names = TAXO.names[sub] || [];
       fillSelect(nameSel, ['Не выбрано', ...names]);
-      if((TAXO.names[sub]||[]).includes(nameOrKey)) nameSel.value = nameOrKey;
+      if((TAXO.names[sub]||[]).includes(key)) nameSel.value = key;
+      else nameSel.value = 'Не выбрано';
     }else{
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
@@ -172,6 +198,7 @@
 
   function buildReverseIndex(){
     const idx = reverseIdx;
+    idx.nameToSub = {}; idx.subToGroup = {}; idx.groupToCat = {};
     Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{
       (arr||[]).forEach(n=> idx.nameToSub[n]=sub);
     });
@@ -198,6 +225,8 @@
       (arr||[]).forEach(n=> set.add(n));
     });
     Object.keys(window.FLAVOR_DATA||{}).forEach(k=> set.add(k));
+    // also alias keys to help search hints
+    Object.values(ALIASES).forEach(v=> set.add(v));
     return Array.from(set);
   }
 
@@ -214,10 +243,10 @@
     centerLabel.textContent = msg;
     const wrap = $(".canvas-wrap").getBoundingClientRect();
     centerLabel.style.left = (wrap.width/2) + "px"; centerLabel.style.top = (wrap.height/2) + "px";
-    notesBox.textContent = '—';
+    if(notesBox) notesBox.textContent = '—';
   }
 
-  // --- data helpers (robust lookup w/ normalization)
+  // data helpers
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
@@ -232,15 +261,15 @@
     });
     if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
-  function aggregateFromChildren(keyRaw){
-    const key = realKey(keyRaw);
+  function aggregateFromChildren(key){
+    const rk = realKey(key);
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names
-      (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+    if(TAXO.names[rk]){ // subgroup -> collect children names
+      (TAXO.names[rk]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
-      (TAXO.subgroups[key]||[]).forEach(sub=>{
+    if(TAXO.subgroups[rk]){ // group -> collect subgroups and names
+      (TAXO.subgroups[rk]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
         (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
@@ -249,12 +278,12 @@
     }
     return null;
   }
-  function aggregateFromParents(keyRaw){
-    const key = realKey(keyRaw);
+  function aggregateFromParents(key){
+    const rk = realKey(key);
     const agg = cloneEmpty();
-    const sub = reverseIdx.nameToSub[key];
+    const sub = reverseIdx.nameToSub[rk];
     const grpViaSub = sub ? reverseIdx.subToGroup[sub] : null;
-    const grpDirect = reverseIdx.subToGroup[key];
+    const grpDirect = reverseIdx.subToGroup[rk];
     const grp = grpViaSub || grpDirect;
 
     if(sub){
@@ -267,17 +296,17 @@
     }
     return nonEmpty(agg) ? agg : null;
   }
-  function datasetFor(keyRaw){
-    const key = realKey(keyRaw);
-    const ds = window.FLAVOR_DATA[key];
+  function datasetFor(key){
+    const rk = realKey(key);
+    const ds = window.FLAVOR_DATA[rk];
     if(nonEmpty(ds)) return ds;
-    const down = aggregateFromChildren(key);
+    const down = aggregateFromChildren(rk);
     if(down) return down;
-    const up = aggregateFromParents(key);
+    const up = aggregateFromParents(rk);
     return up || ds || cloneEmpty();
   }
 
-  // --- geometry
+  // geometry
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -348,10 +377,11 @@
     return dot;
   }
 
-  // --- 2-line label
+  // --- label wrapping to 2 lines (fixed regex)
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
+    // normalize separators to help splits: space around slashes/dashes
     const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
     const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
@@ -361,7 +391,7 @@
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
     // balanced split
-    let best = [str, ""], bestScore = Infinity;
+    let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
       const r = parts.slice(i).join(" ");
@@ -451,11 +481,7 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
-    const activate = ()=>{
-      if(targetKey && KEY_INDEX.has(canon(targetKey))){
-        backFill(targetKey); render({ centerKey: targetKey });
-      }
-    };
+    const activate = ()=>{ if(targetKey){ backFill(targetKey); render({ centerKey: targetKey }); } };
     node.addEventListener("click", activate);
     dot.addEventListener("click", activate);
   }
@@ -501,13 +527,13 @@
     centerLabel.textContent = state.centerKey;
 
     const dataset = datasetFor(state.centerKey);
-    // even if dataset empty, we still draw trunks so user sees structure
+    // no hard fail on empty dataset; we still draw trunks & center label
     const groups = META.map(meta => ({
       meta,
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    notesBox.textContent = dataset && dataset.notes ? dataset.notes : "—";
+    if(notesBox) notesBox.textContent = dataset?.notes || "—";
 
     drawBlobs();
 
@@ -551,7 +577,7 @@
                   labelObj.width = Math.ceil(bb.width) + 16;
                   labelObj.height = Math.ceil(bb.height) + 8;
                 }
-              }catch(e){ /* safe */ }
+              }catch(e){ /* ignore */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
