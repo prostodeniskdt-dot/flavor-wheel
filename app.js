@@ -304,7 +304,7 @@
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
   }
-  function cloneEmpty(){ return { notes:'', best:[], good:[], unexpected:[], bad:[] }; }
+  function cloneEmpty(){ return { notes:'', best:[], good:[], bad:[], unexpected:[] }; }
   function mergeInto(agg, part){
     if(!part) return;
     ['best','good','bad','unexpected'].forEach(k=>{
@@ -312,7 +312,7 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();

@@ -88,7 +88,7 @@ body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,sy
     touch-action: none; /* позволяем жестам внутри SVG */
   }
   .panel{padding:12px}
-  .center-label{font-size:14px; padding:6px 10px}
+  .center-label{font-size:13px; padding:6px 10px}
   :root{ --leaf-w:3.8; --trunk-w:6.6; }
 }
 @media (max-width: 720px){
@@ -103,6 +103,6 @@ body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,sy
   .input,.select{padding:8px 10px}
   .canvas-wrap{min-height:600px}
   .canvas{min-height:500px}
-  .center-label{font-size:13px}
+  .center-label{font-size:12px}
   :root{ --leaf-w:3.3; --trunk-w:5.8; }
 }
