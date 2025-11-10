@@ -15,7 +15,7 @@
   const DUR_TRUNK = 680, DUR_LEAF = 620;
   const CURVINESS = 0.55, WOBBLE = 0.10;
 
-  let search, notesBox, svg;
+  let search, notesBox, svg, zoomInBtn, zoomOutBtn, zoomResetBtn;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
   let centerLabel, tooltip;
   let renderToken = 0;
@@ -26,7 +26,7 @@
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
   // --- zoom/pan state (applies to all layers together)
-  const zoom = { scale: 1, min: 0.7, max: 2.6, x: 0, y: 0 };
+  const zoom = { scale: 1, min: 0.8, max: 3.0, x: 0, y: 0 };
   let isPanning = false;
   let lastPan = {x:0,y:0};
   let pinch = null; // {startD, startS, cx, cy, activeIds, points}
@@ -45,6 +45,7 @@
     notesBox = $("#notes");
     tooltip = $("#tooltip");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
+    zoomInBtn = $("#zoomIn"); zoomOutBtn = $("#zoomOut"); zoomResetBtn = $("#zoomReset");
 
     if(!window.TAXONOMY || !window.CATEGORY_META){
       showError("data.js не загрузился: проверь синтаксис (лишние символы, экранирование, запятая).");
@@ -123,12 +124,38 @@
     // touch & pointer handlers for pinch-zoom and pan
     setupTouchHandlers();
 
+    // zoom buttons
+    zoomInBtn?.addEventListener('click', ()=> zoomTo(zoom.scale*1.14));
+    zoomOutBtn?.addEventListener('click', ()=> zoomTo(zoom.scale/1.14));
+    zoomResetBtn?.addEventListener('click', ()=> { zoom.scale=1; zoom.x=0; zoom.y=0; applyZoomTransform(); });
+
+    // Начальное увеличение на узких экранах
+    if (window.matchMedia && window.matchMedia("(max-width: 960px)").matches){
+      zoom.scale = 1.22;
+    }
+
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
     applyZoomTransform();
   }
 
+  function updateTouchAction(){
+    if (!svg) return;
+    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y' : 'none');
+  }
+
+  function zoomTo(next){
+    const prev = zoom.scale;
+    const clamped = Math.max(zoom.min, Math.min(zoom.max, next));
+    const k = clamped / prev;
+    const rect = svg.getBoundingClientRect();
+    const cx = rect.width/2, cy = rect.height/2;
+    zoom.x = cx - k * (cx - zoom.x);
+    zoom.y = cy - k * (cy - zoom.y);
+    zoom.scale = clamped;
+    applyZoomTransform();
+  }
+
   function onWheel(e){
-    // Только если пользователь явно хочет зумить (ctrl/cmd)
     if(!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const rect = svg.getBoundingClientRect();
@@ -136,39 +163,35 @@
     const cy = e.clientY - rect.top;
     const prev = zoom.scale;
     const factor = Math.exp((-e.deltaY) * 0.0012);
-    zoom.scale = clamp(prev * factor, zoom.min, zoom.max);
+    zoom.scale = Math.max(zoom.min, Math.min(zoom.max, prev * factor));
     const k = zoom.scale / prev;
-    // масштабируем к указателю
     zoom.x = cx - k * (cx - zoom.x);
     zoom.y = cy - k * (cy - zoom.y);
     applyZoomTransform();
   }
 
   function setupTouchHandlers(){
-    // Pointer events: pan одним пальцем (только когда увеличено), pinch двумя
+    updateTouchAction();
+
     svg.addEventListener('pointerdown', (e)=>{
-      // Разрешаем вертикальный скролл, если нет зума
       if((e.pointerType === 'touch' || e.pointerType === 'pen') && zoom.scale <= 1){
         isPanning = false;
         return;
       }
-      if(e.isPrimary && zoom.scale > 1){
+      if(e.isPrimary){
         isPanning = true;
         lastPan = {x: e.clientX, y: e.clientY};
-        // Перехватываем только при реальном панорамировании
         svg.setPointerCapture?.(e.pointerId);
       }
       updatePinchState('down', e);
     }, {passive:false});
 
     svg.addEventListener('pointermove', (e)=>{
-      // pinch-zoom активен
       if(pinch && pinch.activeIds?.has(e.pointerId) && pinch.activeIds.size===2){
         e.preventDefault();
         updatePinchState('move', e);
         return;
       }
-      // панорамирование только когда увеличено
       if(isPanning && zoom.scale > 1){
         e.preventDefault();
         const dx = e.clientX - lastPan.x;
@@ -210,7 +233,7 @@
       }
       const prev = zoom.scale;
       const raw = pinch.startS * (d / (pinch.startD || 1));
-      zoom.scale = clamp(raw, zoom.min, zoom.max);
+      zoom.scale = Math.max(zoom.min, Math.min(zoom.max, raw));
       const k = zoom.scale / prev;
       zoom.x = pinch.cx - k * (pinch.cx - zoom.x);
       zoom.y = pinch.cy - k * (pinch.cy - zoom.y);
@@ -226,6 +249,7 @@
   function applyZoomTransform(){
     const t = `translate(${zoom.x} ${zoom.y}) scale(${zoom.scale})`;
     [gBlobs,gGraph,gCallouts,gLabels,gStamps].forEach(el=> el && el.setAttribute('transform', t));
+    updateTouchAction();
   }
 
   function scrollCanvasIntoView(){
@@ -324,7 +348,7 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
@@ -440,11 +464,9 @@
     return dot;
   }
 
-  // --- label wrapping to 2 lines
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    // normalize separators to help splits: space around slashes/dashes
     const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
     const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
@@ -453,7 +475,6 @@
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
-    // balanced split
     let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
@@ -468,6 +489,7 @@
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class", "node leaf show");
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
+
     const text = document.createElementNS("http://www.w3.org/2000/svg","text");
     text.setAttribute("text-anchor","start");
     const lines = twoLineSplit(String(textStr ?? ""));
@@ -492,10 +514,10 @@
     g.appendChild(hit);
 
     gLabels.appendChild(g);
+
     const obj = { g, pos: {...pos}, width: 360, height, anchor: {...pos} };
     labels.push(obj);
 
-    // measure own bbox safely
     requestAnimationFrame(()=>{
       try{
         if (text && text.getBBox){
@@ -539,7 +561,6 @@
   }
 
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
-    // hover подсветка (клики отключены по требованию)
     const enter = ()=>{
       const allLinks = gGraph.querySelectorAll('.link');
       allLinks.forEach(p=> p.classList.add('dim'));
@@ -558,7 +579,6 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
-    // Клики по узлам отключены
   }
 
   function resolveLabelOverlaps(){
