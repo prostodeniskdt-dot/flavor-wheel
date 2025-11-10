@@ -15,7 +15,7 @@
   const DUR_TRUNK = 680, DUR_LEAF = 620;
   const CURVINESS = 0.55, WOBBLE = 0.10;
 
-  let search, notesBox, svg, zoomInBtn, zoomOutBtn, zoomResetBtn;
+  let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
   let centerLabel, tooltip;
   let renderToken = 0;
@@ -26,10 +26,10 @@
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
   // --- zoom/pan state (applies to all layers together)
-  const zoom = { scale: 1, min: 0.8, max: 3.0, x: 0, y: 0 };
+  const zoom = { scale: 1, min: 0.7, max: 2.6, x: 0, y: 0 };
   let isPanning = false;
   let lastPan = {x:0,y:0};
-  let pinch = null; // {startD, startS, cx, cy, activeIds, points}
+  let pinch = null; // {startD, startS, cx, cy}
 
   const $ = (s, root=document)=> root.querySelector(s);
 
@@ -45,7 +45,6 @@
     notesBox = $("#notes");
     tooltip = $("#tooltip");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
-    zoomInBtn = $("#zoomIn"); zoomOutBtn = $("#zoomOut"); zoomResetBtn = $("#zoomReset");
 
     if(!window.TAXONOMY || !window.CATEGORY_META){
       showError("data.js не загрузился: проверь синтаксис (лишние символы, экранирование, запятая).");
@@ -124,39 +123,12 @@
     // touch & pointer handlers for pinch-zoom and pan
     setupTouchHandlers();
 
-    // zoom buttons
-    zoomInBtn?.addEventListener('click', ()=> zoomTo(zoom.scale*1.14));
-    zoomOutBtn?.addEventListener('click', ()=> zoomTo(zoom.scale/1.14));
-    zoomResetBtn?.addEventListener('click', ()=> { zoom.scale=1; zoom.x=0; zoom.y=0; applyZoomTransform(); });
-
-    // Начальное увеличение на узких экранах
-    if (window.matchMedia && window.matchMedia("(max-width: 960px)").matches){
-      zoom.scale = 1.22;
-    }
-
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
     applyZoomTransform();
   }
 
-  function updateTouchAction(){
-    if (!svg) return;
-    // при обычном масштабе даём странице скроллиться вертикально; панорама включается только при увеличении
-    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'none');
-  }
-
-  function zoomTo(next){
-    const prev = zoom.scale;
-    const clamped = Math.max(zoom.min, Math.min(zoom.max, next));
-    const k = clamped / prev;
-    const rect = svg.getBoundingClientRect();
-    const cx = rect.width/2, cy = rect.height/2;
-    zoom.x = cx - k * (cx - zoom.x);
-    zoom.y = cy - k * (cy - zoom.y);
-    zoom.scale = clamped;
-    applyZoomTransform();
-  }
-
   function onWheel(e){
+    // Только если пользователь явно хочет зумить (ctrl/cmd)
     if(!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const rect = svg.getBoundingClientRect();
@@ -164,37 +136,30 @@
     const cy = e.clientY - rect.top;
     const prev = zoom.scale;
     const factor = Math.exp((-e.deltaY) * 0.0012);
-    zoom.scale = Math.max(zoom.min, Math.min(zoom.max, prev * factor));
+    zoom.scale = clamp(prev * factor, zoom.min, zoom.max);
     const k = zoom.scale / prev;
+    // масштабируем к указателю
     zoom.x = cx - k * (cx - zoom.x);
     zoom.y = cy - k * (cy - zoom.y);
     applyZoomTransform();
   }
 
   function setupTouchHandlers(){
-    updateTouchAction();
-
+    // Pointer events: pan одним пальцем, pinch двумя
     svg.addEventListener('pointerdown', (e)=>{
-      if((e.pointerType === 'touch' || e.pointerType === 'pen') && zoom.scale <= 1){
-        isPanning = false;
-        return;
-      }
+      svg.setPointerCapture?.(e.pointerId);
       if(e.isPrimary){
         isPanning = true;
         lastPan = {x: e.clientX, y: e.clientY};
-        svg.setPointerCapture?.(e.pointerId);
       }
       updatePinchState('down', e);
-    }, {passive:true});
-
+    });
     svg.addEventListener('pointermove', (e)=>{
-      if(pinch && pinch.activeIds?.has(e.pointerId) && pinch.activeIds.size===2){
-        e.preventDefault();
+      if(pinch && pinch.activeIds?.has(e.pointerId)){
         updatePinchState('move', e);
         return;
       }
-      if(isPanning && zoom.scale > 1){
-        e.preventDefault();
+      if(isPanning && (zoom.scale > 1 || e.buttons===1)){
         const dx = e.clientX - lastPan.x;
         const dy = e.clientY - lastPan.y;
         lastPan = {x: e.clientX, y: e.clientY};
@@ -203,14 +168,13 @@
         applyZoomTransform();
       }
     }, {passive:false});
-
     const end = (e)=>{
       isPanning = false;
       updatePinchState('up', e);
-      try{ svg.releasePointerCapture?.(e.pointerId); }catch(_){}
+      svg.releasePointerCapture?.(e.pointerId);
     };
-    svg.addEventListener('pointerup', end, {passive:true});
-    svg.addEventListener('pointercancel', end, {passive:true});
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', end);
   }
 
   function updatePinchState(type, e){
@@ -234,7 +198,7 @@
       }
       const prev = zoom.scale;
       const raw = pinch.startS * (d / (pinch.startD || 1));
-      zoom.scale = Math.max(zoom.min, Math.min(zoom.max, raw));
+      zoom.scale = clamp(raw, zoom.min, zoom.max);
       const k = zoom.scale / prev;
       zoom.x = pinch.cx - k * (pinch.cx - zoom.x);
       zoom.y = pinch.cy - k * (pinch.cy - zoom.y);
@@ -250,7 +214,6 @@
   function applyZoomTransform(){
     const t = `translate(${zoom.x} ${zoom.y}) scale(${zoom.scale})`;
     [gBlobs,gGraph,gCallouts,gLabels,gStamps].forEach(el=> el && el.setAttribute('transform', t));
-    updateTouchAction();
   }
 
   function scrollCanvasIntoView(){
@@ -336,12 +299,12 @@
     notesBox.textContent = '—';
   }
 
-  // ---------- DATA LAYER ----------
+  // data helpers
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
   }
-  function cloneEmpty(){ return { notes:'', best:[], good:[], unexpected:[], bad:[] }; }
+  function cloneEmpty(){ return { notes:'', best:[], good:[], bad:[], unexpected:[] }; }
   function mergeInto(agg, part){
     if(!part) return;
     ['best','good','bad','unexpected'].forEach(k=>{
@@ -351,40 +314,13 @@
     });
     if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
-
-  // synth builders to guarantee a wheel even with sparse data
-  function synthFromGroup(grp){
-    const agg = cloneEmpty();
-    // subgroups as "best"
-    (TAXO.subgroups[grp]||[]).forEach(s=> agg.best.push({to:s, tip:'Подгруппа'}));
-    // names of each subgroup as "good"
-    (TAXO.subgroups[grp]||[]).forEach(s=> (TAXO.names[s]||[]).forEach(n=> agg.good.push({to:n, tip:s})));
-    agg.notes = 'Синтетические связи из таксономии (группа)';
-    return nonEmpty(agg)? agg : null;
-    }
-  function synthFromSubgroup(sub){
-    const agg = cloneEmpty();
-    (TAXO.names[sub]||[]).forEach(n=> agg.best.push({to:n, tip:'Наименование'}));
-    agg.notes = 'Синтетические связи из таксономии (подгруппа)';
-    return nonEmpty(agg)? agg : null;
-  }
-  function synthFromName(name){
-    const agg = cloneEmpty();
-    const sub = reverseIdx.nameToSub[name];
-    if(sub){
-      (TAXO.names[sub]||[]).forEach(n=>{ if(n!==name) agg.good.push({to:n, tip:'Сосед по подгруппе'}); });
-      agg.notes = 'Синтетические связи из таксономии (соседи)';
-    }
-    return nonEmpty(agg)? agg : null;
-  }
-
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names with real data
+    if(TAXO.names[key]){ // subgroup -> collect children names
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names with real data
+    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
       (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
@@ -411,23 +347,16 @@
     }
     return nonEmpty(agg) ? agg : null;
   }
-
   function datasetFor(key){
     const ds = window.FLAVOR_DATA[key];
     if(nonEmpty(ds)) return ds;
     const down = aggregateFromChildren(key);
     if(down) return down;
     const up = aggregateFromParents(key);
-    if(up) return up;
-
-    // synth fallbacks
-    if(TAXO.subgroups[key]) return synthFromGroup(key) || cloneEmpty();
-    if(TAXO.names[key]) return synthFromSubgroup(key) || cloneEmpty();
-    if(reverseIdx.nameToSub[key]) return synthFromName(key) || cloneEmpty();
-    return cloneEmpty();
+    return up || ds || cloneEmpty();
   }
 
-  // ---------- GEOMETRY & RENDER ----------
+  // geometry
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -499,9 +428,11 @@
     return dot;
   }
 
+  // --- label wrapping to 2 lines (fixed regex)
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
+    // normalize separators to help splits: space around slashes/dashes
     const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
     const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
@@ -510,6 +441,7 @@
       const mid = Math.floor(w.length/2);
       return [w.slice(0,mid)+"-", w.slice(mid)];
     }
+    // balanced split
     let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
       const l = parts.slice(0,i).join(" ");
@@ -524,10 +456,9 @@
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class", "node leaf show");
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
-
     const text = document.createElementNS("http://www.w3.org/2000/svg","text");
     text.setAttribute("text-anchor","start");
-    const lines = twoLineSplit(String(textStr ?? ""));
+    const lines = twoLineSplit(textStr);
     const xoff = 12;
     let dy = 2;
     lines.forEach((ln, idx)=>{
@@ -549,27 +480,14 @@
     g.appendChild(hit);
 
     gLabels.appendChild(g);
-
-    const obj = { g, pos: {...pos}, width: 360, height, anchor: {...pos} };
-    labels.push(obj);
-
-    requestAnimationFrame(()=>{
-      try{
-        if (text && text.getBBox){
-          const bb = text.getBBox();
-          obj.width  = Math.ceil(bb.width) + 16;
-          obj.height = Math.ceil(bb.height) + 8;
-        }
-      }catch(_){}
-    });
-
+    labels.push({ g, pos: {...pos}, width: 360, height, anchor: {...pos} });
     return g;
   }
 
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class","stamp");
-    const c = document.createElementNS("http://www.w3.org/2000/svg","circle"); // fixed namespace
+    const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
     c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
     const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
@@ -596,6 +514,7 @@
   }
 
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
+    // hover подсветка (клики отключены по требованию)
     const enter = ()=>{
       const allLinks = gGraph.querySelectorAll('.link');
       allLinks.forEach(p=> p.classList.add('dim'));
@@ -614,6 +533,7 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
+    // Клики по узлам отключены
   }
 
   function resolveLabelOverlaps(){
@@ -699,6 +619,16 @@
               endpointHalo(leafPoint, meta.key);
               const dot  = endpoint(leafPoint, meta.key);
               const node = label(item.to, leafPoint);
+              await new Promise(r=> requestAnimationFrame(()=> r()));
+              try{
+                const textEl = node.querySelector('text');
+                if (textEl && textEl.getBBox) {
+                  const bb = textEl.getBBox();
+                  const labelObj = labels[labels.length-1];
+                  labelObj.width = Math.ceil(bb.width) + 16;
+                  labelObj.height = Math.ceil(bb.height) + 8;
+                }
+              }catch(e){ /* swallow */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )

@@ -2,13 +2,13 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>Flavor Matrix — Skill Tree</title>
-  <link rel="stylesheet" href="styles.css?v=21.12.10" />
+  <link rel="stylesheet" href="styles.css?v=21.12" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">FLAVOR MATRIX — SKILL TREE <span class="badge">v21.12.10</span></div>
+    <div class="brand">FLAVOR MATRIX — SKILL TREE <span class="badge">v21.12</span></div>
     <div id="taxo" class="controls taxo-row">
       <div class="field">
         <input id="search" class="input search" placeholder="Поиск ингредиента…" />
@@ -33,7 +33,7 @@
       </section>
       <section class="panel">
         <h3>Подсказка</h3>
-        <p>Колесо строится для группы / подгруппы / наименования. На мобильных — щипок (pinch) и перетаскивание при увеличении; также есть кнопки +/−.</p>
+        <p>Колесо строится только для группы/подгруппы/наименования. На мобильных доступно масштабирование (щипок) и перемещение одним пальцем.</p>
       </section>
       <section class="panel">
         <h3>Заметки по центру</h3>
@@ -42,11 +42,6 @@
     </aside>
 
     <section class="canvas-wrap">
-      <div class="zoom-ui">
-        <button id="zoomOut" class="zbtn" aria-label="Уменьшить">−</button>
-        <button id="zoomReset" class="zbtn" aria-label="Сброс">⟳</button>
-        <button id="zoomIn" class="zbtn" aria-label="Увеличить">+</button>
-      </div>
       <svg id="canvas" class="canvas" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid meet" aria-label="Flavor graph">
         <defs>
           <filter id="dot-glow" x="-150%" y="-150%" width="400%" height="400%">
@@ -64,8 +59,8 @@
     </section>
   </main>
 
-  <script>window.APP_VERSION="21.12.10";</script>
-  <script src="data.js?v=21.12.10"></script>
-  <script src="app.js?v=21.12.10"></script>
+  <script>window.APP_VERSION="21.12";</script>
+  <script src="data.js?v=21.12"></script>
+  <script src="app.js?v=21.12"></script>
 </body>
 </html>
