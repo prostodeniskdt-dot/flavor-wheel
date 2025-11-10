@@ -140,6 +140,7 @@
 
   function updateTouchAction(){
     if (!svg) return;
+    // при обычном масштабе даём странице скроллиться вертикально; панорама включается только при увеличении
     svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'none');
   }
 
@@ -184,7 +185,7 @@
         svg.setPointerCapture?.(e.pointerId);
       }
       updatePinchState('down', e);
-    }, {passive:false});
+    }, {passive:true});
 
     svg.addEventListener('pointermove', (e)=>{
       if(pinch && pinch.activeIds?.has(e.pointerId) && pinch.activeIds.size===2){
@@ -335,7 +336,7 @@
     notesBox.textContent = '—';
   }
 
-  // data helpers
+  // ---------- DATA LAYER ----------
   function nonEmpty(ds){
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
@@ -351,34 +352,39 @@
     if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
 
-  // ---------- SYNTHETIC DATA FALLBACKS ----------
-  function synthFor(key){
-    // Если данных нет — строим «колесо навигации» из таксономии
-    const ds = cloneEmpty();
-    if (TAXO.subgroups[key]){
-      // key = Группа → листья = её подгруппы
-      (TAXO.subgroups[key]||[]).forEach(sub=> ds.best.push({to: sub}));
-      // и имена второго уровня — как good
-      (TAXO.subgroups[key]||[]).forEach(sub=> (TAXO.names[sub]||[]).forEach(nm=> ds.good.push({to: nm})));
-    } else if (TAXO.names[key]){
-      // key = Подгруппа → листья = её наименования
-      (TAXO.names[key]||[]).forEach(nm=> ds.best.push({to: nm}));
-    } else if (reverseIdx.nameToSub[key]){
-      // key = Наименование → листья = сиблинги в подгруппе
-      const sub = reverseIdx.nameToSub[key];
-      const siblings = (TAXO.names[sub]||[]).filter(n=> n!==key);
-      siblings.forEach(nm=> ds.good.push({to: nm}));
+  // synth builders to guarantee a wheel even with sparse data
+  function synthFromGroup(grp){
+    const agg = cloneEmpty();
+    // subgroups as "best"
+    (TAXO.subgroups[grp]||[]).forEach(s=> agg.best.push({to:s, tip:'Подгруппа'}));
+    // names of each subgroup as "good"
+    (TAXO.subgroups[grp]||[]).forEach(s=> (TAXO.names[s]||[]).forEach(n=> agg.good.push({to:n, tip:s})));
+    agg.notes = 'Синтетические связи из таксономии (группа)';
+    return nonEmpty(agg)? agg : null;
     }
-    return nonEmpty(ds) ? ds : null;
+  function synthFromSubgroup(sub){
+    const agg = cloneEmpty();
+    (TAXO.names[sub]||[]).forEach(n=> agg.best.push({to:n, tip:'Наименование'}));
+    agg.notes = 'Синтетические связи из таксономии (подгруппа)';
+    return nonEmpty(agg)? agg : null;
+  }
+  function synthFromName(name){
+    const agg = cloneEmpty();
+    const sub = reverseIdx.nameToSub[name];
+    if(sub){
+      (TAXO.names[sub]||[]).forEach(n=>{ if(n!==name) agg.good.push({to:n, tip:'Сосед по подгруппе'}); });
+      agg.notes = 'Синтетические связи из таксономии (соседи)';
+    }
+    return nonEmpty(agg)? agg : null;
   }
 
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names
+    if(TAXO.names[key]){ // subgroup -> collect children names with real data
       (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
+    if(TAXO.subgroups[key]){ // group -> collect subgroups and names with real data
       (TAXO.subgroups[key]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
@@ -405,6 +411,7 @@
     }
     return nonEmpty(agg) ? agg : null;
   }
+
   function datasetFor(key){
     const ds = window.FLAVOR_DATA[key];
     if(nonEmpty(ds)) return ds;
@@ -412,12 +419,15 @@
     if(down) return down;
     const up = aggregateFromParents(key);
     if(up) return up;
-    const synth = synthFor(key);
-    if(synth) return synth;
+
+    // synth fallbacks
+    if(TAXO.subgroups[key]) return synthFromGroup(key) || cloneEmpty();
+    if(TAXO.names[key]) return synthFromSubgroup(key) || cloneEmpty();
+    if(reverseIdx.nameToSub[key]) return synthFromName(key) || cloneEmpty();
     return cloneEmpty();
   }
 
-  // geometry
+  // ---------- GEOMETRY & RENDER ----------
   function pointOnAngle(origin, angle, r){ return { x: origin.x + Math.cos(angle)*r, y: origin.y + Math.sin(angle)*r }; }
   function clampPoint(p){
     const minX = VB_W*EDGE_PAD, maxX = VB_W*(1-EDGE_PAD);
@@ -492,8 +502,8 @@
   function twoLineSplit(s){
     const str = String(s||"").trim();
     if(!str) return [""];
-    const norm = str.replace(/\\//g,' / ').replace(/-/g,' - ');
-    const parts = norm.trim().split(/\\s+/);
+    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=12) return [w];
@@ -559,7 +569,7 @@
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class","stamp");
-    const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    const c = document.createElementNS("http://www.w3.org/2000/svg","circle"); // fixed namespace
     c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
     const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
