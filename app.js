@@ -32,7 +32,7 @@
   function init(){
     svg = $("#canvas");
     if(!svg){
-      showError("Не найден <svg id=\\\"canvas\\\">");
+      showError("Не найден <svg id=\"canvas\">");
       return;
     }
     search = $("#search");
@@ -335,8 +335,8 @@
     const str = String(s||"").trim();
     if(!str) return [""];
     // normalize separators to help splits: space around slashes/dashes
-    const norm = str.replace(/\\//g,' / ').replace(/-/g,' - ');
-    const parts = norm.trim().split(/\\s+/);
+    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=12) return [w];
