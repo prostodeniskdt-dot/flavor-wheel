@@ -324,7 +324,7 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
     const agg = cloneEmpty();
@@ -440,10 +440,10 @@
     return dot;
   }
 
-  // --- label wrapping to 2 lines (fixed regex)
+  // --- label wrapping to 2 lines
   function twoLineSplit(s){
     const str = String(s||"").trim();
-    if(!str) return [\"\"];
+    if(!str) return [""];
     // normalize separators to help splits: space around slashes/dashes
     const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
     const parts = norm.trim().split(/\s+/);
@@ -451,13 +451,13 @@
       const w = parts[0];
       if(w.length<=12) return [w];
       const mid = Math.floor(w.length/2);
-      return [w.slice(0,mid)+\"-\", w.slice(mid)];
+      return [w.slice(0,mid)+"-", w.slice(mid)];
     }
     // balanced split
-    let best = [str, \"\"]; let bestScore = Infinity;
+    let best = [str, ""]; let bestScore = Infinity;
     for(let i=1;i<parts.length;i++){
-      const l = parts.slice(0,i).join(\" \");
-      const r = parts.slice(i).join(\" \");
+      const l = parts.slice(0,i).join(" ");
+      const r = parts.slice(i).join(" ");
       const score = Math.abs(l.length - r.length);
       if(score < bestScore){ bestScore = score; best = [l, r]; }
     }
@@ -465,35 +465,33 @@
   }
 
   function label(textStr, pos){
-    const g = document.createElementNS(\"http://www.w3.org/2000/svg\",\"g\");
-    g.setAttribute(\"class\", \"node leaf show\");
-    g.setAttribute(\"transform\", `translate(${pos.x},${pos.y})`);
-
-    const text = document.createElementNS(\"http://www.w3.org/2000/svg\",\"text\");
-    text.setAttribute(\"text-anchor\",\"start\");
-    const lines = twoLineSplit(String(textStr ?? \"\"));
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("class", "node leaf show");
+    g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
+    const text = document.createElementNS("http://www.w3.org/2000/svg","text");
+    text.setAttribute("text-anchor","start");
+    const lines = twoLineSplit(String(textStr ?? ""));
     const xoff = 12;
     let dy = 2;
     lines.forEach((ln, idx)=>{
-      const tspan = document.createElementNS(\"http://www.w3.org/2000/svg\",\"tspan\");
+      const tspan = document.createElementNS("http://www.w3.org/2000/svg","tspan");
       tspan.textContent = ln;
-      tspan.setAttribute(\"x\", xoff);
-      tspan.setAttribute(\"y\", dy);
-      tspan.setAttribute(\"font-size\", 14);
+      tspan.setAttribute("x", xoff);
+      tspan.setAttribute("y", dy);
+      tspan.setAttribute("font-size", 14);
       text.appendChild(tspan);
       if(idx===0 && lines.length>1) dy += 16;
     });
     g.appendChild(text);
 
     const height = (lines.length>1? 44:28);
-    const hit = document.createElementNS(\"http://www.w3.org/2000/svg\",\"rect\");
-    hit.setAttribute(\"x\", -2); hit.setAttribute(\"y\", -14);
-    hit.setAttribute(\"width\", 360); hit.setAttribute(\"height\", height);
-    hit.setAttribute(\"fill\", \"transparent\");
+    const hit = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    hit.setAttribute("x", -2); hit.setAttribute("y", -14);
+    hit.setAttribute("width", 360); hit.setAttribute("height", height);
+    hit.setAttribute("fill", "transparent");
     g.appendChild(hit);
 
     gLabels.appendChild(g);
-
     const obj = { g, pos: {...pos}, width: 360, height, anchor: {...pos} };
     labels.push(obj);
 
@@ -512,13 +510,13 @@
   }
 
   function stampAt(p, catKey){
-    const g = document.createElementNS(\"http://www.w3.org/2000/svg\",\"g\");
-    g.setAttribute(\"class\",\"stamp\");
-    const c = document.createElementNS(\"http://www.w3.org/2000/svg\",\"circle\");
-    c.setAttribute(\"cx\", p.x); c.setAttribute(\"cy\", p.y); c.setAttribute(\"r\", 11);
-    const t = document.createElementNS(\"http://www.w3.org/2000/svg\",\"text\");
-    t.setAttribute(\"x\", p.x); t.setAttribute(\"y\", p.y+0.5);
-    let icon = \"•\"; if(catKey==='best') icon=\"★\"; else if(catKey==='unexpected') icon=\"!\"; else if(catKey==='good') icon=\"➜\";
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("class","stamp");
+    const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
+    const t = document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
+    let icon = "•"; if(catKey==='best') icon="★"; else if(catKey==='unexpected') icon="!"; else if(catKey==='good') icon="➜";
     t.textContent = icon;
     g.appendChild(c); g.appendChild(t);
     gStamps.appendChild(g);
@@ -532,10 +530,10 @@
       {key:'unexpected', x: CENTER.x, y: CENTER.y+260, rx: 230, ry: 140},
     ];
     blobSpec.forEach(b=>{
-      const e = document.createElementNS(\"http://www.w3.org/2000/svg\",\"ellipse\");
-      e.setAttribute(\"cx\", b.x); e.setAttribute(\"cy\", b.y);
-      e.setAttribute(\"rx\", b.rx); e.setAttribute(\"ry\", b.ry);
-      e.setAttribute(\"class\", `blob blob-${b.key}`);
+      const e = document.createElementNS("http://www.w3.org/2000/svg","ellipse");
+      e.setAttribute("cx", b.x); e.setAttribute("cy", b.y);
+      e.setAttribute("rx", b.rx); e.setAttribute("ry", b.ry);
+      e.setAttribute("class", `blob blob-${b.key}`);
       gBlobs.appendChild(e);
     });
   }
@@ -556,10 +554,10 @@
       const trunk = trunks[catKey];
       if(trunk){ trunk.classList.remove('is-highlight-trunk'); }
     };
-    node.addEventListener(\"mouseenter\", enter);
-    node.addEventListener(\"mouseleave\", leave);
-    dot.addEventListener(\"mouseenter\", enter);
-    dot.addEventListener(\"mouseleave\", leave);
+    node.addEventListener("mouseenter", enter);
+    node.addEventListener("mouseleave", leave);
+    dot.addEventListener("mouseenter", enter);
+    dot.addEventListener("mouseleave", leave);
     // Клики по узлам отключены
   }
 
@@ -585,7 +583,7 @@
       }
     }
     labels.forEach(l=>{
-      l.g.setAttribute(\"transform\", `translate(${l.pos.x},${l.pos.y})`);
+      l.g.setAttribute("transform", `translate(${l.pos.x},${l.pos.y})`);
     });
   }
   function rectOf(l){ return { x: l.pos.x-2, y: l.pos.y-14, w: l.width, h: l.height }; }
@@ -594,13 +592,13 @@
 
   async function render(state){
     const myToken = ++renderToken;
-    gGraph.innerHTML = \"\"; gLabels.innerHTML = \"\"; gCallouts.innerHTML = \"\"; gBlobs.innerHTML = \"\"; gStamps.innerHTML = \"\";
+    gGraph.innerHTML = ""; gLabels.innerHTML = ""; gCallouts.innerHTML = ""; gBlobs.innerHTML = ""; gStamps.innerHTML = "";
     for(const k in trunks) delete trunks[k];
     labels.length = 0;
 
-    const wrap = $(\".canvas-wrap\").getBoundingClientRect();
-    centerLabel.style.left = (wrap.width/2) + \"px\";
-    centerLabel.style.top  = (wrap.height/2) + \"px\";
+    const wrap = $(".canvas-wrap").getBoundingClientRect();
+    centerLabel.style.left = (wrap.width/2) + "px";
+    centerLabel.style.top  = (wrap.height/2) + "px";
     centerLabel.textContent = state.centerKey;
 
     const dataset = datasetFor(state.centerKey);
@@ -611,7 +609,7 @@
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    notesBox.textContent = dataset?.notes || \"—\";
+    notesBox.textContent = dataset?.notes || "—";
 
     drawBlobs();
 

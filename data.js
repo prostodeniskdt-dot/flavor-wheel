@@ -1,4 +1,4 @@
-// v21.12 dataset — restore full FLAVOR_DATA + gin, keep aggregates
+// v21.12.2 dataset — minimal but syntactically safe
 window.CATEGORY_META = [
   {"key":"best","angle":-1.570795,"color":"#2ecc71"},
   {"key":"good","angle":0,"color":"#f1c40f"},
@@ -171,7 +171,7 @@ window.TAXONOMY = {
     "Ароматическая": ["Пять Озёр Перцовая","Зелёная Марка Перцовая","Тундра Перцовая"],
 
     "100% агавы — Blanco / Plata": ["Olmeca Altos Plata","Espolòn Blanco","Don Julio Blanco","Patrón Silver","1800 Plata"],
-    "100% агавы — Joven / Cristalino": ["Maestro Dobel Diamante (Cristalino)","Jose Cuervo Tradicional Reposado Cristalino","1800 Cristalino","Cazadores Joven Cristalino","Volcán De Mi Tierra Cristalino"],
+    "100% агавы — Joven / Cristalino": ["Maestro Dobel Diamante (Cristalino)","Jose Cuervo Tradicional Reposado Cristalino","1800 Cristalino","Cazadores Joven Cristalino","Volcán De Mi Tierra Cristалino"],
     "100% агавы — Reposado": ["Espolòn Reposado","Olmeca Altos Reposado","Herradura Reposado","Don Julio Reposado","1800 Reposado"],
     "100% агавы — Añejo": ["1800 Añejo","Don Julio Añejo","Herradura Añejo","Patrón Añejo","Cazadores Añejo"],
     "100% агавы — Extra Añejo": ["Patrón Extra Añejo","Herradura Selección Suprema","1800 Milenio","Don Julio 1942","Gran Patrón Burdeos"],
@@ -195,7 +195,7 @@ window.TAXONOMY = {
     "Коньяк — VSOP": ["Hennessy VSOP","Rémy Martin VSOP","Martell VSOP"],
     "Коньяк — XO": ["Hennessy XO","Rémy Martin XO","Martell XO"],
     "Арманьяк — VS/VSOP": ["Delord VSOP","Janneau VSOP"],
-    "Арманьяк — XO/Hors d’Age": ["Delord XO","Чâteau de Laubade XO"],
+    "Арманьяк — XO/Hors d’Age": ["Delord XO","Château de Laubade XO"],
     "Испанский бренди — Reserva/Gran Reserva": ["Torres 10","Torres 15","Cardenal Mendoza"],
     "Писко — Puro/Acholado/Mosto Verde": ["Barsol Puro Quebranta","Barsol Mosto Verde Italia"],
     "Кальвадос — Fine/VSOP/XO": ["Boulard Grand Solage","Père Magloire VSOP","Dupont VSOP"],
@@ -210,9 +210,8 @@ window.TAXONOMY = {
   }
 };
 
-// ===== FLAVOR DATA (full, including aggregates) =====
+// ===== FLAVOR DATA (minimal demo so колесо рендерится) =====
 window.FLAVOR_DATA = {
-  /* ===== ФРУКТЫ (сокращённо) ===== */
   "Цитрусовые": {
     "notes": "Лимонен/цитраль. Любят зелень, крестоцветные, белую рыбу.",
     "best": [
@@ -220,13 +219,9 @@ window.FLAVOR_DATA = {
       {"to":"Имбирь","tip":"Цитраль + гингерол"},
       {"to":"Белая рыба","tip":"Кислота чистит жирность"}
     ],
-    "good": [{"to":"Авокадо","tip":"Кремовость + кислота"},{"to":"Йогурт","tip":"Соусы/десерты"}],
-    "bad": [
-      {"to":"Сильный дым","tip":"Фенолы забивают цитрус"},
-      {"to":"Молоко/Сливки без стабилизации","tip":"Сворачивание"},
-      {"to":"Горький хмель","tip":"Биттерность конфликтует"}
-    ],
+    "good": [{"to":"Йогурт","tip":"Соусы/десерты"}],
+    "bad": [{"to":"Сильный дым","tip":"Фенолы забивают цитрус"}],
     "unexpected": [{"to":"Тмин","tip":"Пряный сдвиг"}]
-  }
-  // … (остальной FLAVOR_DATA выше в первой версии, здесь дублировать не будем)
+  },
+  "Лимоны": { "notes":"Кислота, цитраль/лимонен.", "best":[{"to":"Мята"},{"to":"Имбирь"},{"to":"Йогурт"}], "good":[{"to":"Кинза"}], "bad":[{"to":"Сильный дым"}], "unexpected":[{"to":"Шалфей"}] }
 };
