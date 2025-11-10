@@ -25,12 +25,6 @@
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
-  // --- zoom/pan state (applies to all layers together)
-  const zoom = { scale: 1, min: 0.7, max: 2.6, x: 0, y: 0 };
-  let isPanning = false;
-  let lastPan = {x:0,y:0};
-  let pinch = null; // {startD, startS, cx, cy}
-
   const $ = (s, root=document)=> root.querySelector(s);
 
   document.addEventListener("DOMContentLoaded", init);
@@ -63,8 +57,8 @@
     gBlobs    = $("#blobs-layer");
     gStamps   = $("#stamps-layer");
 
-    // Колесо: ctrl/cmd + колесо — масштаб; без модификаторов — обычный скролл страницы
-    svg.addEventListener("wheel", onWheel, { passive:false });
+    // Разрешаем скролл страницы: блокируем только ctrl+wheel (браузерный зум)
+    svg.addEventListener("wheel", e => { if(e.ctrlKey) e.preventDefault(); }, { passive:false });
 
     // taxonomy
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
@@ -78,7 +72,7 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      // Для категорий колесо НЕ строим
+      // По требованию: для категорий колесо НЕ строим
       clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
       scrollCanvasIntoView();
     });
@@ -120,105 +114,14 @@
       }
     });
 
-    // touch & pointer handlers for pinch-zoom and pan
-    setupTouchHandlers();
-
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
-    applyZoomTransform();
-  }
-
-  function onWheel(e){
-    // Только если пользователь явно хочет зумить (ctrl/cmd)
-    if(!(e.ctrlKey || e.metaKey)) return;
-    e.preventDefault();
-    const rect = svg.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const prev = zoom.scale;
-    const factor = Math.exp((-e.deltaY) * 0.0012);
-    zoom.scale = clamp(prev * factor, zoom.min, zoom.max);
-    const k = zoom.scale / prev;
-    // масштабируем к указателю
-    zoom.x = cx - k * (cx - zoom.x);
-    zoom.y = cy - k * (cy - zoom.y);
-    applyZoomTransform();
-  }
-
-  function setupTouchHandlers(){
-    // Pointer events: pan одним пальцем, pinch двумя
-    svg.addEventListener('pointerdown', (e)=>{
-      svg.setPointerCapture?.(e.pointerId);
-      if(e.isPrimary){
-        isPanning = true;
-        lastPan = {x: e.clientX, y: e.clientY};
-      }
-      updatePinchState('down', e);
-    });
-    svg.addEventListener('pointermove', (e)=>{
-      if(pinch && pinch.activeIds?.has(e.pointerId)){
-        updatePinchState('move', e);
-        return;
-      }
-      if(isPanning && (zoom.scale > 1 || e.buttons===1)){
-        const dx = e.clientX - lastPan.x;
-        const dy = e.clientY - lastPan.y;
-        lastPan = {x: e.clientX, y: e.clientY};
-        zoom.x += dx;
-        zoom.y += dy;
-        applyZoomTransform();
-      }
-    }, {passive:false});
-    const end = (e)=>{
-      isPanning = false;
-      updatePinchState('up', e);
-      svg.releasePointerCapture?.(e.pointerId);
-    };
-    svg.addEventListener('pointerup', end);
-    svg.addEventListener('pointercancel', end);
-  }
-
-  function updatePinchState(type, e){
-    if(!pinch) pinch = {activeIds:new Set(), points:new Map(), startD:0, startS:1, cx:0, cy:0};
-    if(type==='down'){
-      pinch.activeIds.add(e.pointerId);
-      pinch.points.set(e.pointerId, {x:e.clientX, y:e.clientY});
-    }
-    if(type==='move' && pinch.activeIds.size===2){
-      pinch.points.set(e.pointerId, {x:e.clientX, y:e.clientY});
-      const pts = Array.from(pinch.points.values());
-      if(pts.length<2) return;
-      const [p1,p2] = pts;
-      const d = Math.hypot(p2.x-p1.x, p2.y-p1.y);
-      if(!pinch.inited){
-        pinch.inited = true;
-        pinch.startD = d || 1;
-        pinch.startS = zoom.scale;
-        pinch.cx = (p1.x + p2.x)/2;
-        pinch.cy = (p1.y + p2.y)/2;
-      }
-      const prev = zoom.scale;
-      const raw = pinch.startS * (d / (pinch.startD || 1));
-      zoom.scale = clamp(raw, zoom.min, zoom.max);
-      const k = zoom.scale / prev;
-      zoom.x = pinch.cx - k * (pinch.cx - zoom.x);
-      zoom.y = pinch.cy - k * (pinch.cy - zoom.y);
-      applyZoomTransform();
-    }
-    if(type==='up'){
-      pinch.activeIds.delete(e.pointerId);
-      pinch.points.delete(e.pointerId);
-      if(pinch.activeIds.size<2){ pinch.inited=false; }
-    }
-  }
-
-  function applyZoomTransform(){
-    const t = `translate(${zoom.x} ${zoom.y}) scale(${zoom.scale})`;
-    [gBlobs,gGraph,gCallouts,gLabels,gStamps].forEach(el=> el && el.setAttribute('transform', t));
   }
 
   function scrollCanvasIntoView(){
     const wrap = $(".canvas-wrap");
-    try{ wrap?.scrollIntoView({behavior:'smooth', block:'nearest'}); }catch(e){/* no-op */}
+    try{
+      wrap?.scrollIntoView({behavior:'smooth', block:'nearest'});
+    }catch(e){/* no-op */}
   }
 
   function isCategory(key){ return (TAXO.categories||[]).includes(key); }
@@ -372,7 +275,6 @@
     return { x, y };
   }
 
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
   function seeded(n){ let x = Math.sin(n)*10000; return x - Math.floor(x); }
   function cubicFrom(a, b, startAngle){
     const dx = b.x - a.x, dy = b.y - a.y;
@@ -514,7 +416,6 @@
   }
 
   function attachInteractivity({ leaf, dot, node, tip, catKey, targetKey }){
-    // hover подсветка (клики отключены по требованию)
     const enter = ()=>{
       const allLinks = gGraph.querySelectorAll('.link');
       allLinks.forEach(p=> p.classList.add('dim'));
@@ -533,7 +434,9 @@
     node.addEventListener("mouseleave", leave);
     dot.addEventListener("mouseenter", enter);
     dot.addEventListener("mouseleave", leave);
-    // Клики по узлам отключены
+    const activate = ()=>{ if(targetKey){ backFill(targetKey); render({ centerKey: targetKey }); } };
+    node.addEventListener("click", activate);
+    dot.addEventListener("click", activate);
   }
 
   function resolveLabelOverlaps(){

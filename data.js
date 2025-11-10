@@ -1,4 +1,4 @@
-// v21.12 dataset — restore full FLAVOR_DATA + gin, keep aggregates
+// v21.10 dataset — мобильные фиксы + добавлен «Джин» (Gin)
 window.CATEGORY_META = [
   {"key":"best","angle":-1.570795,"color":"#2ecc71"},
   {"key":"good","angle":0,"color":"#f1c40f"},
@@ -171,7 +171,7 @@ window.TAXONOMY = {
     "Ароматическая": ["Пять Озёр Перцовая","Зелёная Марка Перцовая","Тундра Перцовая"],
 
     "100% агавы — Blanco / Plata": ["Olmeca Altos Plata","Espolòn Blanco","Don Julio Blanco","Patrón Silver","1800 Plata"],
-    "100% агавы — Joven / Cristалino": ["Maestro Dobel Diamante (Cristalino)","Jose Cuervo Tradicional Reposado Cristalino","1800 Cristalino","Cazadores Joven Cristalino","Volcán De Mi Tierra Cristalino"],
+    "100% агавы — Joven / Cristalino": ["Maestro Dobel Diamante (Cristalino)","Jose Cuervo Tradicional Reposado Cristalino","1800 Cristalino","Cazadores Joven Cristalino","Volcán De Mi Tierra Cristalino"],
     "100% агавы — Reposado": ["Espolòn Reposado","Olmeca Altos Reposado","Herradura Reposado","Don Julio Reposado","1800 Reposado"],
     "100% агавы — Añejo": ["1800 Añejo","Don Julio Añejo","Herradura Añejo","Patrón Añejo","Cazadores Añejo"],
     "100% агавы — Extra Añejo": ["Patrón Extra Añejo","Herradura Selección Suprema","1800 Milenio","Don Julio 1942","Gran Patrón Burdeos"],
@@ -210,7 +210,6 @@ window.TAXONOMY = {
   }
 };
 
-// ===== FLAVOR DATA (full, including aggregates) =====
 window.FLAVOR_DATA = {
   /* ===== ФРУКТЫ (сокращённо) ===== */
   "Цитрусовые": {
