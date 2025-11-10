@@ -24,7 +24,6 @@ body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,sy
 .legend li{display:flex; align-items:center; gap:10px; color:#cfcfcf}
 .chip{display:inline-block; width:14px; height:8px; border-radius:3px}
 .chip-best{background:var(--best)} .chip-good{background:var(--good)} .chip-bad{background:var(--bad)} .chip-unexpected{background:var(--unexpected)}
-
 .canvas-wrap{
   min-height:0;
   background:
@@ -64,10 +63,6 @@ body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,sy
 .tooltip{display:none}
 
 .canvas-wrap{height:calc(100vh - var(--topbar-h) - 20px)}
-
-.tg-btn{position:fixed; left:16px; bottom:16px; z-index:50; text-decoration:none; color:#fff; background:rgba(255,0,0,.08); border:1px solid rgba(255,80,80,.6); padding:10px 14px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(2px); font-weight:800; line-height:1.1}
-.tg-btn span{font-weight:700; color:#ffb3b3}
-.tg-btn:hover{background:rgba(255,0,0,.15)}
 
 @media (max-width: 1080px){
   .select{min-width:160px}
