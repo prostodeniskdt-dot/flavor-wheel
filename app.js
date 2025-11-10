@@ -1,5 +1,32 @@
 (function(){
   'use strict';
+
+  // === Canonicalization helpers & alias map ===
+  const ALIASES = {
+    "корневица": "Корневища",
+    "кокако шоколад": "Какао/Шоколад",
+    "свеживе травы": "Свежие травы",
+    "сухие ингридиенты": "Сухие ингредиенты",
+    "грейпфруты": "Грейпфрут",
+  };
+  function canon(s){
+    if(s==null) return "";
+    let str = String(s).normalize('NFKC')
+      .replace(/[–—−]/g,'-')
+      .replace(/\s*\/\s*/g, '/')
+      .replace(/\s+/g,' ')
+      .trim()
+      .toLowerCase()
+      .replace(/ё/g,'е');
+    return str;
+  }
+  function realKey(k){
+    const c0 = canon(k);
+    const aliased = ALIASES[c0] || k;
+    const c = canon(aliased);
+    return KEY_INDEX[c] || aliased; // fall back to aliased original if not in index
+  }
+
   const META = (window && window.CATEGORY_META) || [
     {"key":"best","angle":-1.570795,"color":"#2ecc71"},
     {"key":"good","angle":0,"color":"#f1c40f"},
@@ -17,13 +44,14 @@
 
   let search, notesBox, svg;
   let gGraph, gLabels, gCallouts, gBlobs, gStamps;
-  let centerLabel, tooltip;
+  let centerLabel;
   let renderToken = 0;
   const trunks = {};
   const labels = [];
 
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
+  let KEY_INDEX = {}; // canon -> original
 
   const $ = (s, root=document)=> root.querySelector(s);
 
@@ -37,14 +65,14 @@
     }
     search = $("#search");
     notesBox = $("#notes");
-    tooltip = $("#tooltip");
     catSel = $("#catSelect"); groupSel = $("#groupSelect"); subSel = $("#subgroupSelect"); nameSel = $("#nameSelect");
 
     if(!window.TAXONOMY || !window.CATEGORY_META){
-      showError("data.js не загрузился: проверь синтаксис (лишние символы, экранирование, запятая).");
+      showError("data.js не загрузился: проверь синтаксис.");
       return;
     }
 
+    buildKeyIndex();
     buildReverseIndex();
 
     centerLabel = document.createElement("div");
@@ -57,10 +85,10 @@
     gBlobs    = $("#blobs-layer");
     gStamps   = $("#stamps-layer");
 
-    // Разрешаем скролл страницы: блокируем только ctrl+wheel (браузерный зум)
-    svg.addEventListener("wheel", e => { if(e.ctrlKey) e.preventDefault(); }, { passive:false });
+    svg.addEventListener("wheel", e => e.preventDefault(), { passive:false });
+    svg.addEventListener("mousedown", e => e.preventDefault());
 
-    // taxonomy
+    // taxonomy UI
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
     fillSelect(groupSel, ['Не выбрано']);
     fillSelect(subSel, ['Не выбрано']);
@@ -72,9 +100,8 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
-      // По требованию: для категорий колесо НЕ строим
+      // Категорию не отображаем колесом — просили отключить
       clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
-      scrollCanvasIntoView();
     });
     groupSel.addEventListener('change', ()=>{
       const grp = groupSel.value;
@@ -83,7 +110,6 @@
       fillSelect(nameSel, ['Не выбрано']);
       if(grp !== 'Не выбрано') { render({ centerKey: grp }); }
       else clearAndMessage('Выбери подгруппу или наименование…');
-      scrollCanvasIntoView();
     });
     subSel.addEventListener('change', ()=>{
       const sub = subSel.value;
@@ -91,40 +117,25 @@
       fillSelect(nameSel, ['Не выбрано', ...names]);
       if(sub !== 'Не выбрано') { render({ centerKey: sub }); }
       else clearAndMessage('Выбери наименование…');
-      scrollCanvasIntoView();
     });
     nameSel.addEventListener('change', ()=>{
       const nm = nameSel.value;
       if(nm !== 'Не выбрано'){ backFill(nm); render({ centerKey: nm }); }
       else clearAndMessage('—');
-      scrollCanvasIntoView();
     });
 
-    // omni-search
+    // omni-search (терпит опечатки и регистр)
     search?.addEventListener("input", ()=>{
-      const q = (search.value || "").trim().toLowerCase();
+      const q = (search.value || "").trim();
       if(!q){ return; }
+      const cq = canon(q);
       const keys = allSearchKeys();
-      const match = keys.find(k => String(k).toLowerCase().includes(q));
-      if (match) {
-        backFill(match);
-        if(!isCategory(match)) render({ centerKey: match });
-        else clearAndMessage('Выбери группу/подгруппу/наименование…');
-        scrollCanvasIntoView();
-      }
+      const match = keys.find(k => canon(k).includes(cq));
+      if (match) { backFill(match); render({ centerKey: match }); }
     });
 
     clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
   }
-
-  function scrollCanvasIntoView(){
-    const wrap = $(".canvas-wrap");
-    try{
-      wrap?.scrollIntoView({behavior:'smooth', block:'nearest'});
-    }catch(e){/* no-op */}
-  }
-
-  function isCategory(key){ return (TAXO.categories||[]).includes(key); }
 
   function showError(msg){
     const box = $("#err");
@@ -133,8 +144,37 @@
     box.hidden = false;
   }
 
+  function buildKeyIndex(){
+    KEY_INDEX = {};
+    // categories
+    (TAXO.categories||[]).forEach(c=> KEY_INDEX[canon(c)] = c);
+    // groups
+    Object.entries(TAXO.groups||{}).forEach(([cat, groups])=>{
+      (groups||[]).forEach(g=> KEY_INDEX[canon(g)] = g);
+    });
+    // subgroups
+    Object.entries(TAXO.subgroups||{}).forEach(([grp, subs])=>{
+      KEY_INDEX[canon(grp)] = grp;
+      (subs||[]).forEach(s=> KEY_INDEX[canon(s)] = s);
+    });
+    // names (leaf names)
+    Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{
+      KEY_INDEX[canon(sub)] = sub;
+      (arr||[]).forEach(n=> KEY_INDEX[canon(n)] = n);
+    });
+    // FLAVOR_DATA keys
+    Object.keys(window.FLAVOR_DATA||{}).forEach(k=>{
+      KEY_INDEX[canon(k)] = k;
+    });
+    // add aliases
+    Object.entries(ALIASES).forEach(([wrong, right])=>{
+      const r = KEY_INDEX[canon(right)] || right;
+      KEY_INDEX[canon(wrong)] = r;
+    });
+  }
+
   function backFill(nameOrKey){
-    const key = nameOrKey;
+    const key = realKey(nameOrKey);
     const sub = reverseIdx.nameToSub[key];
     const grp = reverseIdx.subToGroup[sub] || reverseIdx.subToGroup[key];
     const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
@@ -148,7 +188,8 @@
       subSel.value = sub;
       const names = TAXO.names[sub] || [];
       fillSelect(nameSel, ['Не выбрано', ...names]);
-      if((TAXO.names[sub]||[]).includes(nameOrKey)) nameSel.value = nameOrKey;
+      if((TAXO.names[sub]||[]).includes(key)) nameSel.value = key;
+      else nameSel.value = 'Не выбрано';
     }else{
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
@@ -157,6 +198,7 @@
 
   function buildReverseIndex(){
     const idx = reverseIdx;
+    idx.nameToSub = {}; idx.subToGroup = {}; idx.groupToCat = {};
     Object.entries(TAXO.names||{}).forEach(([sub, arr])=>{
       (arr||[]).forEach(n=> idx.nameToSub[n]=sub);
     });
@@ -183,6 +225,8 @@
       (arr||[]).forEach(n=> set.add(n));
     });
     Object.keys(window.FLAVOR_DATA||{}).forEach(k=> set.add(k));
+    // also alias keys to help search hints
+    Object.values(ALIASES).forEach(v=> set.add(v));
     return Array.from(set);
   }
 
@@ -199,7 +243,7 @@
     centerLabel.textContent = msg;
     const wrap = $(".canvas-wrap").getBoundingClientRect();
     centerLabel.style.left = (wrap.width/2) + "px"; centerLabel.style.top = (wrap.height/2) + "px";
-    notesBox.textContent = '—';
+    if(notesBox) notesBox.textContent = '—';
   }
 
   // data helpers
@@ -215,16 +259,17 @@
         if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
       });
     });
-    if(part.notes){ agg.notes += (agg.notes? '\\n' : '') + part.notes; }
+    if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
   }
   function aggregateFromChildren(key){
+    const rk = realKey(key);
     const agg = cloneEmpty();
-    if(TAXO.names[key]){ // subgroup -> collect children names
-      (TAXO.names[key]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
+    if(TAXO.names[rk]){ // subgroup -> collect children names
+      (TAXO.names[rk]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
       return nonEmpty(agg)? agg : null;
     }
-    if(TAXO.subgroups[key]){ // group -> collect subgroups and names
-      (TAXO.subgroups[key]||[]).forEach(sub=>{
+    if(TAXO.subgroups[rk]){ // group -> collect subgroups and names
+      (TAXO.subgroups[rk]||[]).forEach(sub=>{
         const subDs = window.FLAVOR_DATA[sub];
         if(nonEmpty(subDs)) mergeInto(agg, subDs);
         (TAXO.names[sub]||[]).forEach(nm=>{ if(window.FLAVOR_DATA[nm]) mergeInto(agg, window.FLAVOR_DATA[nm]); });
@@ -234,10 +279,11 @@
     return null;
   }
   function aggregateFromParents(key){
+    const rk = realKey(key);
     const agg = cloneEmpty();
-    const sub = reverseIdx.nameToSub[key];
+    const sub = reverseIdx.nameToSub[rk];
     const grpViaSub = sub ? reverseIdx.subToGroup[sub] : null;
-    const grpDirect = reverseIdx.subToGroup[key];
+    const grpDirect = reverseIdx.subToGroup[rk];
     const grp = grpViaSub || grpDirect;
 
     if(sub){
@@ -251,11 +297,12 @@
     return nonEmpty(agg) ? agg : null;
   }
   function datasetFor(key){
-    const ds = window.FLAVOR_DATA[key];
+    const rk = realKey(key);
+    const ds = window.FLAVOR_DATA[rk];
     if(nonEmpty(ds)) return ds;
-    const down = aggregateFromChildren(key);
+    const down = aggregateFromChildren(rk);
     if(down) return down;
-    const up = aggregateFromParents(key);
+    const up = aggregateFromParents(rk);
     return up || ds || cloneEmpty();
   }
 
@@ -480,14 +527,13 @@
     centerLabel.textContent = state.centerKey;
 
     const dataset = datasetFor(state.centerKey);
-    if(!dataset){ centerLabel.textContent = '—'; return; }
-
+    // no hard fail on empty dataset; we still draw trunks & center label
     const groups = META.map(meta => ({
       meta,
       items: (dataset[meta.key] || []).map(p => ({ ...p, category: meta.key, targetKey: p.to }))
     }));
 
-    notesBox.textContent = dataset?.notes || "—";
+    if(notesBox) notesBox.textContent = dataset?.notes || "—";
 
     drawBlobs();
 
@@ -531,7 +577,7 @@
                   labelObj.width = Math.ceil(bb.width) + 16;
                   labelObj.height = Math.ceil(bb.height) + 8;
                 }
-              }catch(e){ /* swallow */ }
+              }catch(e){ /* ignore */ }
               attachInteractivity({ leaf, dot, node, tip: item.tip, catKey: meta.key, targetKey: item.to });
             })
           )
