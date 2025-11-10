@@ -25,10 +25,11 @@
   let catSel, groupSel, subSel, nameSel;
   let reverseIdx = { nameToSub:{}, subToGroup:{}, groupToCat:{} };
 
+  // --- zoom/pan state (applies to all layers together)
   const zoom = { scale: 1, min: 0.8, max: 3.0, x: 0, y: 0 };
   let isPanning = false;
   let lastPan = {x:0,y:0};
-  let pinch = null;
+  let pinch = null; // {startD, startS, cx, cy, activeIds, points}
 
   const $ = (s, root=document)=> root.querySelector(s);
 
@@ -63,8 +64,10 @@
     gBlobs    = $("#blobs-layer");
     gStamps   = $("#stamps-layer");
 
+    // Колесо: ctrl/cmd + колесо — масштаб; без модификаторов — обычный скролл страницы
     svg.addEventListener("wheel", onWheel, { passive:false });
 
+    // taxonomy
     fillSelect(catSel, ['Не выбрано', ...TAXO.categories]);
     fillSelect(groupSel, ['Не выбрано']);
     fillSelect(subSel, ['Не выбрано']);
@@ -76,6 +79,7 @@
       fillSelect(groupSel, ['Не выбрано', ...groups]);
       fillSelect(subSel, ['Не выбрано']);
       fillSelect(nameSel, ['Не выбрано']);
+      // Для категорий колесо НЕ строим
       clearAndMessage('Выбери группу/подгруппу/наименование для построения диаграммы.');
       scrollCanvasIntoView();
     });
@@ -103,6 +107,7 @@
       scrollCanvasIntoView();
     });
 
+    // omni-search
     search?.addEventListener("input", ()=>{
       const q = (search.value || "").trim().toLowerCase();
       if(!q){ return; }
@@ -116,12 +121,15 @@
       }
     });
 
+    // touch & pointer handlers for pinch-zoom and pan
     setupTouchHandlers();
 
+    // zoom buttons
     zoomInBtn?.addEventListener('click', ()=> zoomTo(zoom.scale*1.14));
     zoomOutBtn?.addEventListener('click', ()=> zoomTo(zoom.scale/1.14));
     zoomResetBtn?.addEventListener('click', ()=> { zoom.scale=1; zoom.x=0; zoom.y=0; applyZoomTransform(); });
 
+    // Начальное увеличение на узких экранах
     if (window.matchMedia && window.matchMedia("(max-width: 960px)").matches){
       zoom.scale = 1.22;
     }
@@ -132,9 +140,7 @@
 
   function updateTouchAction(){
     if (!svg) return;
-    // Даем жесты браузера для естественного pinch-zoom,
-    // но блокируем горизонтальный скролл когда увеличено и мы паним SVG
-    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'none');
+    svg.style.touchAction = (zoom.scale <= 1 ? 'auto' : 'none');
   }
 
   function zoomTo(next){
@@ -178,7 +184,7 @@
         svg.setPointerCapture?.(e.pointerId);
       }
       updatePinchState('down', e);
-    }, {passive:false});
+    }, {passive:true});
 
     svg.addEventListener('pointermove', (e)=>{
       if(pinch && pinch.activeIds?.has(e.pointerId) && pinch.activeIds.size===2){
@@ -402,6 +408,7 @@
     return { x, y };
   }
 
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
   function seeded(n){ let x = Math.sin(n)*10000; return x - Math.floor(x); }
   function cubicFrom(a, b, startAngle){
     const dx = b.x - a.x, dy = b.y - a.y;
@@ -527,7 +534,7 @@
   function stampAt(p, catKey){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
     g.setAttribute("class","stamp");
-    const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    const c = document.createElementNS("http://www.w3.org/200/svg","circle");
     c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 11);
     const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", p.x); t.setAttribute("y", p.y+0.5);
