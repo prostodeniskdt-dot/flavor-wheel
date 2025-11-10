@@ -29,7 +29,7 @@
   const zoom = { scale: 1, min: 0.7, max: 2.6, x: 0, y: 0 };
   let isPanning = false;
   let lastPan = {x:0,y:0};
-  let pinch = null; // {startD, startS, cx, cy}
+  let pinch = null; // {startD, startS, cx, cy, activeIds, points}
 
   const $ = (s, root=document)=> root.querySelector(s);
 
@@ -145,21 +145,32 @@
   }
 
   function setupTouchHandlers(){
-    // Pointer events: pan одним пальцем, pinch двумя
+    // Pointer events: pan одним пальцем (только когда увеличено), pinch двумя
     svg.addEventListener('pointerdown', (e)=>{
-      svg.setPointerCapture?.(e.pointerId);
-      if(e.isPrimary){
+      // Разрешаем вертикальный скролл, если нет зума
+      if((e.pointerType === 'touch' || e.pointerType === 'pen') && zoom.scale <= 1){
+        isPanning = false;
+        return;
+      }
+      if(e.isPrimary && zoom.scale > 1){
         isPanning = true;
         lastPan = {x: e.clientX, y: e.clientY};
+        // Перехватываем только при реальном панорамировании
+        svg.setPointerCapture?.(e.pointerId);
       }
       updatePinchState('down', e);
-    });
+    }, {passive:false});
+
     svg.addEventListener('pointermove', (e)=>{
-      if(pinch && pinch.activeIds?.has(e.pointerId)){
+      // pinch-zoom активен
+      if(pinch && pinch.activeIds?.has(e.pointerId) && pinch.activeIds.size===2){
+        e.preventDefault();
         updatePinchState('move', e);
         return;
       }
-      if(isPanning && (zoom.scale > 1 || e.buttons===1)){
+      // панорамирование только когда увеличено
+      if(isPanning && zoom.scale > 1){
+        e.preventDefault();
         const dx = e.clientX - lastPan.x;
         const dy = e.clientY - lastPan.y;
         lastPan = {x: e.clientX, y: e.clientY};
@@ -168,13 +179,14 @@
         applyZoomTransform();
       }
     }, {passive:false});
+
     const end = (e)=>{
       isPanning = false;
       updatePinchState('up', e);
-      svg.releasePointerCapture?.(e.pointerId);
+      try{ svg.releasePointerCapture?.(e.pointerId); }catch(_){}
     };
-    svg.addEventListener('pointerup', end);
-    svg.addEventListener('pointercancel', end);
+    svg.addEventListener('pointerup', end, {passive:true});
+    svg.addEventListener('pointercancel', end, {passive:true});
   }
 
   function updatePinchState(type, e){
@@ -304,7 +316,7 @@
     if(!ds) return false;
     return (ds.best&&ds.best.length) || (ds.good&&ds.good.length) || (ds.bad&&ds.bad.length) || (ds.unexpected&&ds.unexpected.length);
   }
-  function cloneEmpty(){ return { notes:'', best:[], good:[], bad:[], unexpected:[] }; }
+  function cloneEmpty(){ return { notes:'', best:[], good:[], unexpected:[], bad:[] }; }
   function mergeInto(agg, part){
     if(!part) return;
     ['best','good','bad','unexpected'].forEach(k=>{
@@ -433,8 +445,8 @@
     const str = String(s||"").trim();
     if(!str) return [""];
     // normalize separators to help splits: space around slashes/dashes
-    const norm = str.replace(/\//g,' / ').replace(/-/g,' - ');
-    const parts = norm.trim().split(/\s+/);
+    const norm = str.replace(/\\//g,' / ').replace(/-/g,' - ');
+    const parts = norm.trim().split(/\\s+/);
     if(parts.length===1){
       const w = parts[0];
       if(w.length<=12) return [w];
