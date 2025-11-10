@@ -6,7 +6,6 @@
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-/* Вертикальный скролл по умолчанию (важно на мобильных) */
 body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,system-ui,sans-serif; overflow-y:auto; overflow-x:hidden}
 .topbar{min-height:var(--topbar-h); display:grid; grid-template-columns: 1fr; grid-auto-rows:minmax(42px,auto); row-gap:8px; align-items:center; padding:12px 18px; background:#101012; border-bottom:1px solid #1c1c1f; box-shadow:0 2px 0 rgba(255,45,45,.25)}
 .brand{font-weight:800; letter-spacing:.5px}
@@ -24,7 +23,7 @@ body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,sy
 .legend.small li{margin:2px 0}
 .legend li{display:flex; align-items:center; gap:10px; color:#cfcfcf}
 .chip{display:inline-block; width:14px; height:8px; border-radius:3px}
-.chip-best{background:var(--best)} .chip-good{background:var(--good)} .chip-bад{background:var(--bad)} .chip-unexpected{background:var(--unexpected)}
+.chip-best{background:var(--best)} .chip-good{background:var(--good)} .chip-bad{background:var(--bad)} .chip-unexpected{background:var(--unexpected)}
 
 .canvas-wrap{
   min-height:0;
@@ -64,26 +63,22 @@ body{margin:0;background:#0a0a0a; color:var(--text); font:500 16px/1.55 Inter,sy
 .err{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:#1a1a1a; border:1px solid #a33; color:#ffb3b3; padding:10px 14px; border-radius:10px; font:600 14px/1.4 Inter,system-ui; box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .tooltip{display:none}
 
-/* Desktop defaults */
 .canvas-wrap{height:calc(100vh - var(--topbar-h) - 20px)}
 
 .tg-btn{position:fixed; left:16px; bottom:16px; z-index:50; text-decoration:none; color:#fff; background:rgba(255,0,0,.08); border:1px solid rgba(255,80,80,.6); padding:10px 14px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); backdrop-filter: blur(2px); font-weight:800; line-height:1.1}
 .tg-btn span{font-weight:700; color:#ffb3b3}
 .tg-btn:hover{background:rgba(255,0,0,.15)}
 
-/* Mobile / Tablet */
 @media (max-width: 1080px){
   .select{min-width:160px}
 }
 @media (max-width: 960px){
   :root{ --topbar-h:138px; }
   .layout{grid-template-columns:1fr; gap:12px; padding:12px}
-  /* В мобильной версии контейнер растягиваемый + прокрутка */
   .canvas-wrap{
     height:auto; min-height:640px; max-height:none;
     overflow:auto; -webkit-overflow-scrolling:touch;
   }
-  /* Отменяем touch-action на CSS, управляем в JS динамически */
   .canvas{
     width:100%;
     height:auto;

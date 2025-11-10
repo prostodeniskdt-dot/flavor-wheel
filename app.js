@@ -140,7 +140,7 @@
 
   function updateTouchAction(){
     if (!svg) return;
-    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y' : 'none');
+    svg.style.touchAction = (zoom.scale <= 1 ? 'pan-y pinch-zoom' : 'pinch-zoom');
   }
 
   function zoomTo(next){
