@@ -162,10 +162,22 @@
       KEY_INDEX[canon(sub)] = sub;
       (arr||[]).forEach(n=> KEY_INDEX[canon(n)] = n);
     });
-    // FLAVOR_DATA keys
+    
+    // ВАЖНО: Убеждаемся, что патчинг FLAVOR_DATA выполнен перед индексацией
+    // Проверяем FLAVOR_DATA_ENRICH и добавляем недостающие ингредиенты
+    if (window.FLAVOR_DATA_ENRICH && window.FLAVOR_DATA) {
+      Object.keys(window.FLAVOR_DATA_ENRICH).forEach(key => {
+        if (!window.FLAVOR_DATA[key]) {
+          window.FLAVOR_DATA[key] = { notes: '', best: [], good: [], bad: [], unexpected: [] };
+        }
+      });
+    }
+    
+    // FLAVOR_DATA keys - ВСЕ ключи из FLAVOR_DATA
     Object.keys(window.FLAVOR_DATA||{}).forEach(k=>{
       KEY_INDEX[canon(k)] = k;
     });
+    
     // Также добавляем все ингредиенты из FLAVOR_DATA в KEY_INDEX
     // (все значения в полях best, good, bad, unexpected)
     if(window.FLAVOR_DATA){
@@ -184,6 +196,17 @@
         });
       });
     }
+    
+    // Также добавляем все ключи из FLAVOR_DATA_ENRICH для безопасности
+    if(window.FLAVOR_DATA_ENRICH){
+      Object.keys(window.FLAVOR_DATA_ENRICH).forEach(k=>{
+        const kCanon = canon(k);
+        if(!KEY_INDEX[kCanon]){
+          KEY_INDEX[kCanon] = k;
+        }
+      });
+    }
+    
     // add aliases
     Object.entries(ALIASES).forEach(([wrong, right])=>{
       const r = KEY_INDEX[canon(right)] || right;
@@ -326,6 +349,7 @@
   function findReverseLinks(key){
     const rk = realKey(key);
     const keyCanon = canon(rk || key); // Используем каноническое имя для поиска
+    const originalKeyCanon = canon(key); // Также проверяем оригинальный key
     const result = cloneEmpty();
     const foundIn = { best: [], good: [], bad: [], unexpected: [] };
     
@@ -340,9 +364,18 @@
           const itemCanon = canon(item.to);
           const itemRealKey = realKey(item.to);
           const itemRealKeyCanon = canon(itemRealKey);
+          const sourceKeyCanon = canon(sourceKey);
           
           // Проверяем совпадение с каноническим именем (с учетом алиасов и индексов)
-          if(itemCanon === keyCanon || itemRealKeyCanon === keyCanon){
+          // Сравниваем с keyCanon, originalKeyCanon, rk и самим key
+          if(itemCanon === keyCanon || 
+             itemCanon === originalKeyCanon ||
+             itemRealKeyCanon === keyCanon || 
+             itemRealKeyCanon === originalKeyCanon ||
+             item.to === key ||
+             item.to === rk ||
+             canon(item.to) === canon(key) ||
+             canon(item.to) === canon(rk)){
             // Нашли упоминание - добавляем источник в ту же категорию (обратная связь)
             // Если A в best для B, то B может быть в best для A (взаимность)
             // Если A в bad для B, то B может быть в bad для A
@@ -355,14 +388,14 @@
       });
     });
     
-    // Удаляем дубликаты
+    // Удаляем дубликаты по каноническому имени
     ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
       const seen = new Set();
       result[catKey] = foundIn[catKey].filter(item => {
         if(!item || !item.to) return false;
-        const key = canon(item.to);
-        if(seen.has(key)) return false;
-        seen.add(key);
+        const itemKey = canon(item.to);
+        if(seen.has(itemKey)) return false;
+        seen.add(itemKey);
         return true;
       });
     });
@@ -376,10 +409,21 @@
     let hasDirect = false;
     
     // Сначала пробуем найти прямые данные
-    const ds = window.FLAVOR_DATA[rk];
+    // Проверяем и по rk, и по оригинальному key, и по каноническому имени
+    const ds = window.FLAVOR_DATA[rk] || window.FLAVOR_DATA[key] || window.FLAVOR_DATA[canon(key)];
     if(nonEmpty(ds)){
       mergeInto(result, ds);
       hasDirect = true;
+    }
+    
+    // Если прямых данных нет, пробуем найти по каноническому имени среди всех ключей
+    if(!hasDirect && window.FLAVOR_DATA){
+      const keyCanon = canon(key);
+      const foundKey = Object.keys(window.FLAVOR_DATA).find(k => canon(k) === keyCanon);
+      if(foundKey && window.FLAVOR_DATA[foundKey]){
+        mergeInto(result, window.FLAVOR_DATA[foundKey]);
+        hasDirect = true;
+      }
     }
     
     // Пробуем найти данные от детей
@@ -397,9 +441,16 @@
     }
     
     // Всегда добавляем обратные связи (даже если есть прямые данные)
+    // Используем и rk, и оригинальный key для поиска
     const reverseLinks = findReverseLinks(rk);
     if(nonEmpty(reverseLinks)){
       mergeInto(result, reverseLinks);
+    } else {
+      // Если не нашли по rk, пробуем по оригинальному key
+      const reverseLinksAlt = findReverseLinks(key);
+      if(nonEmpty(reverseLinksAlt)){
+        mergeInto(result, reverseLinksAlt);
+      }
     }
     
     // Если есть какие-то данные (прямые или обратные), возвращаем их
@@ -407,9 +458,9 @@
       // Добавляем заметку если её нет
       if(!result.notes || result.notes === ''){
         if(hasDirect){
-          result.notes = `Данные для ${rk}`;
+          result.notes = `Данные для ${rk || key}`;
         } else {
-          result.notes = `Обратные связи для ${rk}. Собраны из всех упоминаний в базе данных.`;
+          result.notes = `Обратные связи для ${rk || key}. Собраны из всех упоминаний в базе данных.`;
         }
       }
       return result;
