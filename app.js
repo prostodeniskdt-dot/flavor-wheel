@@ -616,26 +616,69 @@
 
   function resolveLabelOverlaps(){
     if(labels.length < 2) return;
-    const passes = 40; // Увеличено количество проходов для лучшего разрешения
-    const minSpacing = 8; // Минимальный отступ между метками
+    const passes = 60; // Увеличено количество проходов для более плавного разрешения
+    const minSpacing = 12; // Минимальный отступ между метками
+    const maxDisplacement = 150; // Максимальное смещение от исходной позиции
+    
+    // Сохраняем исходные позиции для ограничения смещения
+    const originalPositions = labels.map(l => l && l.pos ? {x: l.pos.x, y: l.pos.y} : null);
+    
     for(let pass=0; pass<passes; pass++){
       for(let i=0;i<labels.length;i++){
         for(let j=i+1;j<labels.length;j++){
           const a = labels[i], b = labels[j];
-          if(!a || !b || !a.pos || !b.pos) continue;
+          if(!a || !b || !a.pos || !b.pos || !originalPositions[i] || !originalPositions[j]) continue;
+          
           const ar = rectOf(a), br = rectOf(b);
           // Расширяем прямоугольники для учёта минимального отступа
-          const arExpanded = {x: ar.x - minSpacing, y: ar.y - minSpacing, w: ar.w + 2*minSpacing, h: ar.h + 2*minSpacing};
-          const brExpanded = {x: br.x - minSpacing, y: br.y - minSpacing, w: br.w + 2*minSpacing, h: br.h + 2*minSpacing};
+          const arExpanded = {x: ar.x - minSpacing/2, y: ar.y - minSpacing/2, w: ar.w + minSpacing, h: ar.h + minSpacing};
+          const brExpanded = {x: br.x - minSpacing/2, y: br.y - minSpacing/2, w: br.w + minSpacing, h: br.h + minSpacing};
           const dx = overlap1D(arExpanded.x, arExpanded.x+arExpanded.w, brExpanded.x, brExpanded.x+brExpanded.w);
           const dy = overlap1D(arExpanded.y, arExpanded.y+arExpanded.h, brExpanded.y, brExpanded.y+brExpanded.h);
+          
           if(dx>0 && dy>0){
-            const va = vecFromCenter(a.pos); const vb = vecFromCenter(b.pos);
-            // Увеличиваем шаг для более агрессивного разрешения
-            const step = 2.5 * (1 - pass/passes);
-            // Раздвигаем метки в противоположных направлениях от центра
-            a.pos.x += va.x*step; a.pos.y += va.y*step;
-            b.pos.x += vb.x*step; b.pos.y += vb.y*step;
+            const va = vecFromCenter(a.pos);
+            const vb = vecFromCenter(b.pos);
+            
+            // Вычисляем вектор между центрами меток
+            const centerDistX = (br.x + br.w/2) - (ar.x + ar.w/2);
+            const centerDistY = (br.y + br.h/2) - (ar.y + ar.h/2);
+            const centerDist = Math.hypot(centerDistX, centerDistY) || 1;
+            
+            // Направление раздвижения - перпендикулярно к линии между центрами
+            const separationX = -centerDistY / centerDist;
+            const separationY = centerDistX / centerDist;
+            
+            // Адаптивный шаг, который уменьшается с каждой итерацией и зависит от перекрытия
+            const overlapArea = dx * dy;
+            const maxOverlap = Math.max(ar.w * ar.h, br.w * br.h);
+            const overlapRatio = Math.min(overlapArea / maxOverlap, 1);
+            const step = (1.8 + overlapRatio * 1.2) * (1 - pass/passes);
+            
+            // Проверяем расстояние от исходной позиции
+            const aDistFromOriginal = Math.hypot(a.pos.x - originalPositions[i].x, a.pos.y - originalPositions[i].y);
+            const bDistFromOriginal = Math.hypot(b.pos.x - originalPositions[j].x, b.pos.y - originalPositions[j].y);
+            
+            // Ограничиваем смещение, но все еще разрешаем небольшое движение
+            const aMaxStep = Math.max(0, maxDisplacement - aDistFromOriginal);
+            const bMaxStep = Math.max(0, maxDisplacement - bDistFromOriginal);
+            const actualStepA = Math.min(step, aMaxStep);
+            const actualStepB = Math.min(step, bMaxStep);
+            
+            // Раздвигаем метки с учетом ограничений
+            a.pos.x += separationX * actualStepA * 0.5;
+            a.pos.y += separationY * actualStepA * 0.5;
+            b.pos.x -= separationX * actualStepB * 0.5;
+            b.pos.y -= separationY * actualStepB * 0.5;
+            
+            // Также добавляем небольшое смещение от центра, чтобы сохранить радиальное расположение
+            const radialAdjustA = Math.min(actualStepA * 0.3, Math.max(0, maxDisplacement * 0.3 - aDistFromOriginal));
+            const radialAdjustB = Math.min(actualStepB * 0.3, Math.max(0, maxDisplacement * 0.3 - bDistFromOriginal));
+            a.pos.x += va.x * radialAdjustA;
+            a.pos.y += va.y * radialAdjustA;
+            b.pos.x += vb.x * radialAdjustB;
+            b.pos.y += vb.y * radialAdjustB;
+            
             a.pos = clampPoint(a.pos);
             b.pos = clampPoint(b.pos);
           }
