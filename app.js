@@ -507,18 +507,24 @@
 
   function resolveLabelOverlaps(){
     if(labels.length < 2) return;
-    const passes = 28;
+    const passes = 40; // Увеличено количество проходов для лучшего разрешения
+    const minSpacing = 8; // Минимальный отступ между метками
     for(let pass=0; pass<passes; pass++){
       for(let i=0;i<labels.length;i++){
         for(let j=i+1;j<labels.length;j++){
           const a = labels[i], b = labels[j];
           if(!a || !b || !a.pos || !b.pos) continue;
           const ar = rectOf(a), br = rectOf(b);
-          const dx = overlap1D(ar.x, ar.x+ar.w, br.x, br.x+br.w);
-          const dy = overlap1D(ar.y, ar.y+ar.h, br.y, br.y+br.h);
+          // Расширяем прямоугольники для учёта минимального отступа
+          const arExpanded = {x: ar.x - minSpacing, y: ar.y - minSpacing, w: ar.w + 2*minSpacing, h: ar.h + 2*minSpacing};
+          const brExpanded = {x: br.x - minSpacing, y: br.y - minSpacing, w: br.w + 2*minSpacing, h: br.h + 2*minSpacing};
+          const dx = overlap1D(arExpanded.x, arExpanded.x+arExpanded.w, brExpanded.x, brExpanded.x+brExpanded.w);
+          const dy = overlap1D(arExpanded.y, arExpanded.y+arExpanded.h, brExpanded.y, brExpanded.y+brExpanded.h);
           if(dx>0 && dy>0){
             const va = vecFromCenter(a.pos); const vb = vecFromCenter(b.pos);
-            const step = 1.15 * (1 - pass/passes);
+            // Увеличиваем шаг для более агрессивного разрешения
+            const step = 2.5 * (1 - pass/passes);
+            // Раздвигаем метки в противоположных направлениях от центра
             a.pos.x += va.x*step; a.pos.y += va.y*step;
             b.pos.x += vb.x*step; b.pos.y += vb.y*step;
             a.pos = clampPoint(a.pos);
