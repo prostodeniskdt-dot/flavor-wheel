@@ -180,7 +180,8 @@
     const cat = reverseIdx.groupToCat[grp] || reverseIdx.groupToCat[key];
     if(cat){ catSel.value = cat; }
     if(grp){
-      fillSelect(groupSel, ['Не выбрано', ...(TAXO.groups[cat]||[])]);
+      const catForGroups = cat || Object.keys(TAXO.groups).find(c => (TAXO.groups[c] || []).includes(grp)) || null;
+      fillSelect(groupSel, ['Не выбрано', ...(TAXO.groups[catForGroups]||[])]);
       groupSel.value = grp;
     }
     if(sub){
@@ -241,8 +242,11 @@
     ++renderToken;
     gGraph.innerHTML = ""; gLabels.innerHTML=""; gCallouts.innerHTML=""; gBlobs.innerHTML=""; gStamps.innerHTML="";
     centerLabel.textContent = msg;
-    const wrap = $(".canvas-wrap").getBoundingClientRect();
-    centerLabel.style.left = (wrap.width/2) + "px"; centerLabel.style.top = (wrap.height/2) + "px";
+    const wrapEl = $(".canvas-wrap");
+    if(wrapEl){
+      const wrap = wrapEl.getBoundingClientRect();
+      centerLabel.style.left = (wrap.width/2) + "px"; centerLabel.style.top = (wrap.height/2) + "px";
+    }
     if(notesBox) notesBox.textContent = '—';
   }
 
@@ -347,16 +351,23 @@
       path.setAttribute("class", classes.join(' '));
       gGraph.appendChild(path);
       const len = path.getTotalLength();
+      if(len === 0){
+        resolve(path);
+        return;
+      }
       path.style.strokeDasharray = `${len} ${len}`;
       path.style.strokeDashoffset = `${len}`;
       path.style.transition = "none";
       path.classList.remove("anim-start");
+      // Двойной requestAnimationFrame для гарантии что браузер отрендерил начальное состояние
       requestAnimationFrame(()=>{
-        void path.getBoundingClientRect();
-        path.style.transition = `stroke-dashoffset ${durationMs}ms cubic-bezier(.28,.86,.2,1)`;
-        path.classList.add("anim-start");
-        path.style.strokeDashoffset = "0";
-        setTimeout(()=> resolve(path), durationMs);
+        requestAnimationFrame(()=>{
+          void path.getBoundingClientRect();
+          path.style.transition = `stroke-dashoffset ${durationMs}ms cubic-bezier(.28,.86,.2,1)`;
+          path.classList.add("anim-start");
+          path.style.strokeDashoffset = "0";
+          setTimeout(()=> resolve(path), durationMs);
+        });
       });
     });
   }
@@ -403,7 +414,7 @@
 
   function label(textStr, pos){
     const g = document.createElementNS("http://www.w3.org/2000/svg","g");
-    g.setAttribute("class", "node leaf show");
+    g.setAttribute("class", "node leaf");
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
     const text = document.createElementNS("http://www.w3.org/2000/svg","text");
     text.setAttribute("text-anchor","start");
@@ -430,6 +441,14 @@
 
     gLabels.appendChild(g);
     labels.push({ g, pos: {...pos}, width: 360, height, anchor: {...pos} });
+    
+    // Добавляем класс show после рендеринга для плавного появления текста
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        g.classList.add("show");
+      });
+    });
+    
     return g;
   }
 
@@ -493,6 +512,7 @@
       for(let i=0;i<labels.length;i++){
         for(let j=i+1;j<labels.length;j++){
           const a = labels[i], b = labels[j];
+          if(!a || !b || !a.pos || !b.pos) continue;
           const ar = rectOf(a), br = rectOf(b);
           const dx = overlap1D(ar.x, ar.x+ar.w, br.x, br.x+br.w);
           const dy = overlap1D(ar.y, ar.y+ar.h, br.y, br.y+br.h);
@@ -507,11 +527,17 @@
         }
       }
     }
+    // Обновляем позиции всех меток после разрешения пересечений
     labels.forEach(l=>{
-      l.g.setAttribute("transform", `translate(${l.pos.x},${l.pos.y})`);
+      if(l && l.g && l.pos){
+        l.g.setAttribute("transform", `translate(${l.pos.x},${l.pos.y})`);
+      }
     });
   }
-  function rectOf(l){ return { x: l.pos.x-2, y: l.pos.y-14, w: l.width, h: l.height }; }
+  function rectOf(l){ 
+    if(!l || !l.pos) return { x: 0, y: 0, w: 0, h: 0 };
+    return { x: l.pos.x-2, y: l.pos.y-14, w: l.width || 360, h: l.height || 28 }; 
+  }
   function overlap1D(a1, a2, b1, b2){ const left = Math.max(a1,b1), right = Math.min(a2,b2); return Math.max(0, right-left); }
   function vecFromCenter(p){ const dx = p.x - (1600/2), dy = p.y - (1000/2); const len = Math.hypot(dx, dy) || 1; return { x: dx/len, y: dy/len }; }
 
@@ -521,9 +547,12 @@
     for(const k in trunks) delete trunks[k];
     labels.length = 0;
 
-    const wrap = $(".canvas-wrap").getBoundingClientRect();
-    centerLabel.style.left = (wrap.width/2) + "px";
-    centerLabel.style.top  = (wrap.height/2) + "px";
+    const wrapEl = $(".canvas-wrap");
+    if(wrapEl){
+      const wrap = wrapEl.getBoundingClientRect();
+      centerLabel.style.left = (wrap.width/2) + "px";
+      centerLabel.style.top  = (wrap.height/2) + "px";
+    }
     centerLabel.textContent = state.centerKey;
 
     const dataset = datasetFor(state.centerKey);
@@ -585,6 +614,9 @@
       }
     }
     await Promise.all(leafPromises);
+    if(myToken !== renderToken) return;
+    // Ждем завершения всех асинхронных операций с метками перед разрешением пересечений
+    await new Promise(r=> setTimeout(r, 50));
     if(myToken !== renderToken) return;
     resolveLabelOverlaps();
   }
