@@ -260,7 +260,11 @@
     if(!part) return;
     ['best','good','bad','unexpected'].forEach(k=>{
       (part[k]||[]).forEach(x=>{
-        if(!agg[k].some(y=> y.to===x.to)) agg[k].push({to:x.to, tip:x.tip||''});
+        // Используем каноническое имя для проверки дубликатов
+        const xCanon = canon(x.to);
+        if(!agg[k].some(y=> canon(y.to) === xCanon)){
+          agg[k].push({to:x.to, tip:x.tip||''});
+        }
       });
     });
     if(part.notes){ agg.notes += (agg.notes? '\n' : '') + part.notes; }
@@ -300,14 +304,95 @@
     }
     return nonEmpty(agg) ? agg : null;
   }
+  // Функция для поиска всех обратных связей ингредиента
+  function findReverseLinks(key){
+    const rk = realKey(key);
+    const keyCanon = canon(rk || key); // Используем каноническое имя для поиска
+    const result = cloneEmpty();
+    const foundIn = { best: [], good: [], bad: [], unexpected: [] };
+    
+    // Проходим по всей базе данных и ищем упоминания этого ингредиента
+    Object.entries(window.FLAVOR_DATA || {}).forEach(([sourceKey, sourceData])=>{
+      if(!sourceData) return;
+      ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
+        const items = sourceData[catKey] || [];
+        items.forEach(item => {
+          // Проверяем как оригинальное значение, так и каноническое
+          const itemCanon = canon(item.to);
+          if(itemCanon === keyCanon){
+            // Нашли упоминание - добавляем источник в ту же категорию (обратная связь)
+            // Если A в best для B, то B может быть в best для A (взаимность)
+            // Если A в bad для B, то B может быть в bad для A
+            foundIn[catKey].push({
+              to: sourceKey,
+              tip: item.tip || `${sourceKey} упоминает ${key} в категории ${catKey}`
+            });
+          }
+        });
+      });
+    });
+    
+    // Удаляем дубликаты
+    ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
+      const seen = new Set();
+      result[catKey] = foundIn[catKey].filter(item => {
+        const key = canon(item.to);
+        if(seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    });
+    
+    return result;
+  }
+
   function datasetFor(key){
     const rk = realKey(key);
+    let result = cloneEmpty();
+    let hasDirect = false;
+    
+    // Сначала пробуем найти прямые данные
     const ds = window.FLAVOR_DATA[rk];
-    if(nonEmpty(ds)) return ds;
+    if(nonEmpty(ds)){
+      mergeInto(result, ds);
+      hasDirect = true;
+    }
+    
+    // Пробуем найти данные от детей
     const down = aggregateFromChildren(rk);
-    if(down) return down;
+    if(down){
+      mergeInto(result, down);
+      hasDirect = true;
+    }
+    
+    // Пробуем найти данные от родителей
     const up = aggregateFromParents(rk);
-    return up || ds || cloneEmpty();
+    if(up){
+      mergeInto(result, up);
+      hasDirect = true;
+    }
+    
+    // Всегда добавляем обратные связи (даже если есть прямые данные)
+    const reverseLinks = findReverseLinks(rk);
+    if(nonEmpty(reverseLinks)){
+      mergeInto(result, reverseLinks);
+    }
+    
+    // Если есть какие-то данные (прямые или обратные), возвращаем их
+    if(nonEmpty(result)){
+      // Добавляем заметку если её нет
+      if(!result.notes || result.notes === ''){
+        if(hasDirect){
+          result.notes = `Данные для ${rk}`;
+        } else {
+          result.notes = `Обратные связи для ${rk}. Собраны из всех упоминаний в базе данных.`;
+        }
+      }
+      return result;
+    }
+    
+    // Если ничего не найдено, возвращаем пустой объект
+    return cloneEmpty();
   }
 
   // geometry
