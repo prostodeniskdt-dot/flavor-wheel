@@ -638,3 +638,703 @@ window.FLAVOR_DATA = {
     }
   });
 })();
+
+
+/* ==== ДОБАВЛЕНО ChatGPT: молекулярная логика из The Flavor Matrix + терпеновые/тиоловые кластеры ==== */
+
+/**
+ * FLAVOR_CHEMISTRY — абстрактный слой над FLAVOR_DATA.
+ * Здесь нет готовых рецептов, только «правила игры»:
+ *  - как работают вкусы между собой (taste-модель);
+ *  - какие крупные ароматические семейства существуют и как они дружат;
+ *  - молекулярные кластеры (терпены, тиолы, норизопреноиды, пиразины, лизатные, эмпирематические).
+ *
+ * Использование:
+ *  - FLAVOR_CHEMISTRY.tastes       → подсказки по балансировке вкуса;
+ *  - FLAVOR_CHEMISTRY.aromaFamilies→ логика ароматических мостов;
+ *  - FLAVOR_CHEMISTRY.moleculeFamilies → молекулярные связи;
+ *  - findMolecularNeighbors(name)  → какие молекулярные кластеры связаны с продуктом;
+ *  - getMolecularSuggestionGraph(name) → аналог, но ещё и список «соседей»-ингредиентов.
+ */
+
+window.FLAVOR_CHEMISTRY = {
+  /* 1. ВКУСЫ (taste-level): что с чем дружит и что чем балансить */
+  tastes: {
+    sweet: {
+      name: "Сладкий",
+      complementary: ["sweet", "salty", "fat", "umami"],
+      balancing: ["sour", "bitter", "spicy"],
+      examples: ["мёд", "сахар", "спелые фрукты"]
+    },
+    sour: {
+      name: "Кислый",
+      complementary: ["salty", "spicy"],
+      balancing: ["sweet", "fat"],
+      examples: ["лимон", "уксус", "йогурт"]
+    },
+    salty: {
+      name: "Солёный",
+      complementary: ["sweet", "umami", "fat"],
+      balancing: ["bitter"],
+      examples: ["соль", "сыры", "соевый соус"]
+    },
+    bitter: {
+      name: "Горький",
+      complementary: ["bitter", "spicy"],
+      balancing: ["sweet", "fat", "salty"],
+      examples: ["тоник (кинин)", "хмель", "кофе"]
+    },
+    umami: {
+      name: "Умами",
+      complementary: ["salty", "fat", "sweet"],
+      balancing: ["sour"],
+      examples: ["пармезан", "томаты", "грибы", "анчоусы"]
+    },
+    fat: {
+      name: "Жирный",
+      complementary: ["sweet", "umami", "salty"],
+      balancing: ["sour", "bitter", "spicy"],
+      examples: ["сливки", "масло", "жирное мясо", "авокадо"]
+    },
+    spicy: {
+      name: "Острый",
+      complementary: ["sour", "salty"],
+      balancing: ["fat", "sweet"],
+      examples: ["чили", "имбирь", "перец"]
+    }
+  },
+
+  /* 2. АРОМАТИЧЕСКИЕ СЕМЕЙСТВА (укрупнённый flavor-круг) */
+  aromaFamilies: {
+    fruity: {
+      name: "Фруктовый",
+      mainSubfamilies: ["berry", "citrus", "dried", "melon", "tree_fruit", "tropical"],
+      typicalSources: [
+        "Ягоды", "Цитрусовые", "Яблоки/Груши",
+        "Косточковые", "Тропические фрукты", "Виноград белый", "Виноград красный"
+      ],
+      pairsWellWith: ["dairy", "maillard", "nutty", "spice", "floral"],
+      notes: "Фруктовые ноты любят жир (сливки, масло), жареное/карамель, орехи и пряности."
+    },
+    phenol: {
+      name: "Фенольный/дымный",
+      mainSubfamilies: ["smoky", "chocolate", "dried"],
+      typicalSources: ["Копчёности", "Копчёный чай", "Кофе тёмной обжарки", "Тёмное пиво"],
+      pairsWellWith: ["fruity", "maillard", "meaty", "sour", "spice"],
+      notes: "Дым и фенолы усиливают жареное/мясное, требуют кислоты или сладости для баланса."
+    },
+    pungent: {
+      name: "Острый/резкий",
+      mainSubfamilies: ["sulphur_pungent", "acidic_pungent"],
+      typicalSources: ["Хрен", "Горчица", "Редис", "Чеснок", "Имбирь"],
+      pairsWellWith: ["fat", "sweet", "fruity", "dairy"],
+      notes: "Резкие ноты смягчаются жиром и сладостью; хорошо работают с фруктовой кислотой."
+    },
+    maillard: {
+      name: "Maillard / жареный",
+      mainSubfamilies: ["meaty", "nutty", "roasted", "toasted"],
+      typicalSources: ["Жареное мясо", "Поджаренный хлеб", "Жареный лук", "Кофе", "Какао"],
+      pairsWellWith: ["fruity", "dairy", "alcohol", "sour", "spice"],
+      notes: "Всё жареное, тостовое и мясное. Любит фруктовую кислоту, алкоголь и молочные."
+    },
+    terpene: {
+      name: "Терпены",
+      mainSubfamilies: ["citrus", "herbal", "floral", "resinous", "spice"],
+      typicalSources: ["Лимоны", "Лаймы", "Апельсины", "Грейпфруты", "Можжевельник", "Розмарин", "Базилик", "Тимьян", "Лаванда"],
+      pairsWellWith: ["fruity", "floral", "sour", "alcohol", "dairy"],
+      notes: "Терпены дают цитрусовые, хвойные, цветочные и пряные ноты. Это мост между цитрусом и зеленью."
+    },
+    marine: {
+      name: "Морской",
+      mainSubfamilies: ["briny", "iodine"],
+      typicalSources: ["Устрицы", "Мидии", "Водоросли", "Рыба белая"],
+      pairsWellWith: ["sour", "fruity", "terpene", "maillard"],
+      notes: "Морские ноты просятся к лимону, травам и лёгкой обжарке."
+    },
+    sour: {
+      name: "Кислый/ферментированный",
+      mainSubfamilies: ["lactic", "acetic"],
+      typicalSources: ["Йогурт", "Кефир", "Сметана", "Уксус", "Ферментированные овощи"],
+      pairsWellWith: ["fat", "maillard", "fruity", "spicy"],
+      notes: "Кислота чистит жир и освежает жареные ноты, усиливает фруктовость."
+    },
+    vegetal: {
+      name: "Растительный",
+      mainSubfamilies: ["earthy", "green", "herbaceous"],
+      typicalSources: ["Свекла", "Морковь", "Сельдерей", "Зелень", "Капустные"],
+      pairsWellWith: ["dairy", "maillard", "terpene", "nutty", "fruity"],
+      notes: "Землистые и зелёные ноты любят молочные, орехи и жареные оттенки плюс немного фрукта/кислоты."
+    },
+    dairy: {
+      name: "Молочный",
+      mainSubfamilies: ["fresh", "aged"],
+      typicalSources: ["Молоко", "Сливки", "Йогурт", "Сливочное масло", "Сыры"],
+      pairsWellWith: ["fruity", "maillard", "terpene", "vegetal", "spice"],
+      notes: "Жир и белок смягчают кислоту и горечь, связывают сложные ароматические композиции."
+    },
+    alcohol: {
+      name: "Алкогольный",
+      mainSubfamilies: ["wine", "fortified", "spirits"],
+      typicalSources: ["Вино белое", "Вино красное", "Ром", "Бренди/Коньяк", "Виски"],
+      pairsWellWith: ["maillard", "fruity", "dairy", "spice"],
+      notes: "Алкоголь несёт аромат, поднимает фрукт и специи, подчёркивает жареное."
+    },
+    floral: {
+      name: "Цветочный",
+      mainSubfamilies: ["white_flower", "rose", "violet"],
+      typicalSources: ["Лаванда", "Роза", "Цветок апельсина", "Личи", "Маракуйя"],
+      pairsWellWith: ["fruity", "berry", "citrus", "dairy"],
+      notes: "Цветочные ноты усиливаются ягодами, тропическими фруктами и мягкими молочными основами."
+    }
+  },
+
+  /* 3. МОЛЕКУЛЯРНЫЕ КЛАСТЕРЫ ИЗ ТВОЕГО СПИСКА */
+  moleculeFamilies: {
+    terpenes: {
+      name: "Терпены и их производные",
+      profile: "Яркие цветочные, цитрусовые, хвойные и пряные ароматы. Очень летучие, дают ощущение свежести.",
+      mainCompounds: {
+        linalool: {
+          name: "Линалоол",
+          typicalSources: ["Лаванда", "Цветок апельсина", "Лилия", "Лавровый лист"],
+          suggestedPairingLogic: "Соединяет цветочные травы с цитрусом и мягкими фруктами; мост для джинов, игристых и лёгких белых/розе."
+        },
+        geraniol: {
+          name: "Гераниол",
+          typicalSources: ["Роза", "Дикая морковь"],
+          suggestedPairingLogic: "Работает с ягодами (малина, клубника), косточковыми и красными винами; любит лёгкую горчинку (вермуты, биттеры)."
+        },
+        nerol_citronellol: {
+          name: "Нерол и цитронеллол",
+          typicalSources: ["Розы", "Цитрусовая цедра", "Лемонграсс"],
+          suggestedPairingLogic: "Дают ощущение цитрусового цвета; собирают вместе цитрусы, розу, вербену, тархун и большинство свежих белых вин."
+        },
+        limonene_citral: {
+          name: "Лимонен и цитраль",
+          typicalSources: ["Лимоны", "Лаймы", "Грейпфруты", "Бергамот", "Мандарины", "Тмин", "Укроп", "Фенхель", "Петрушка", "Лемонграсс"],
+          suggestedPairingLogic: "Типичный «цитрусовый мост»: где есть кислота и свежесть (цитрус, травы, анисовые), можно смело миксовать между собой."
+        },
+        cineole_alpha_pinene: {
+          name: "1,8-цинеол и α-пинен",
+          typicalSources: ["Можжевельник", "Розмарин", "Эвкалипт"],
+          suggestedPairingLogic: "Хвойно-камфорные. Переносят высокий алкоголь, отлично работают в крепких коктейлях и с жирным мясом/сыром."
+        },
+        rotundone: {
+          name: "Ротундон (сесквитерпен)",
+          typicalSources: ["Чёрный перец", "Тимьян", "Базилик"],
+          suggestedPairingLogic: "Перечно-пряная нота. Любит танины, красные вина, жареное мясо и сладкие фрукты (груша, персик, клубника)."
+        }
+      }
+    },
+
+    thiols: {
+      name: "Тиолы (тиоловые ароматические соединения)",
+      profile: "Ультра-мощные молекулы с очень низким порогом восприятия. В малых дозах — маракуйя, крыжовник и грейпфрут; в больших — пот/кошачий лоток.",
+      mainCompounds: {
+        m4mp: {
+          name: "4MMP (4-меркапто-4-метилпентан-2-он)",
+          typicalSources: ["Самшит", "Маракуйя", "Ракитник", "Чёрная смородина"],
+          suggestedPairingLogic: "Чёрная смородина + маракуйя + зелёные и цитрусовые вина (совиньон-блан); хорошо держит горечь тоника и сухие травы."
+        },
+        m3h: {
+          name: "3MH (3-меркапто-гексан-1-ол)",
+          typicalSources: ["Маракуйя", "Розовый грейпфрут", "Крыжовник", "Гуава"],
+          suggestedPairingLogic: "Сшивает тропики (маракуйя/гуава) с розовым грейпфрутом и крыжовником; отлично в слабо-сладких хайболах и сауэрах."
+        },
+        m3ha: {
+          name: "3MHA (3-меркапто-гексил-ацетат)",
+          typicalSources: ["Маракуйя", "Розовый грейпфрут", "Самшит", "Крыжовник", "Гуава"],
+          suggestedPairingLogic: "Эстерная версия 3MH — ещё более фруктовая и яркая. Просит кислоты и холода; не перегружать алкоголем, чтобы не уйти в «кошачий» профиль."
+        }
+      },
+      concentrationNote: "Чем выше концентрация тиолов, тем меньше ощущается фрукт и тем больше пот/«кошачий лоток». В коктейлях и блюдах лучше работать с разбавлением и охлаждением."
+    },
+
+    norisoprenoids: {
+      name: "Норизопреноиды",
+      profile: "Производные каротиноидов, часто в ароматных и выдержанных винах. Даёт нефтяные, цветочные, фруктовые и древесные ноты.",
+      mainCompounds: {
+        tdn: {
+          name: "TDN",
+          typicalSources: ["Выдержанные рислинги", "Ароматные белые вина"],
+          suggestedPairingLogic: "Нефтеподобная нота (бензин/керосин). Нужны яркие фрукты, лайм, персик/абрикос и немного соли/копчёности (копчёная рыба)."
+        },
+        beta_damascenone: {
+          name: "β-дамасценон",
+          typicalSources: ["Ароматные вина", "Яблоки", "Розы"],
+          suggestedPairingLogic: "Очень мощный усилитель сладко-фруктового восприятия — «умами» для ароматов. Немного усиливает остальные ароматы."
+        },
+        vitispirane: {
+          name: "Витиспиран",
+          typicalSources: ["Выдержанные вина"],
+          suggestedPairingLogic: "Соединяет цветочность, фрукт и дерево. Хорошо работает с бочковыми спиртами (коньяк, ром), косточковыми и пряностями."
+        }
+      }
+    },
+
+    pyrazines: {
+      name: "Пиразины",
+      profile: "Зелёный болгарский перец, свекольная ботва, спаржа, свежескошенная трава.",
+      typicalSources: ["Зелёный болгарский перец", "Свекольная ботва", "Спаржа", "Крыжовник", "Свежая трава"],
+      pairingLogic: "Зелёные пиразины любят цитрус, соль и жир: лимон/лайм + оливковое масло + зелень; в напитках — лайм, огурец, лёгкий джин/текила."
+    },
+
+    lysates: {
+      name: "Лизатные/дрожжевые ноты",
+      profile: "Хлебные, ореховые, дрожжевые — бриошь, тост, поджаренная корочка.",
+      typicalSources: ["Хлеб", "Тост", "Шампанское на осадке", "Зрелые сыры", "Экстракт дрожжей"],
+      pairingLogic: "Лизатные ноты — лучший друг умами и сладости: шампанское + пармезан, тосты + паштеты, дрожжевое пиво + орехи/карамель."
+    },
+
+    empyreumatic: {
+      name: "Эмпирематические (жжёные, дымные)",
+      profile: "Пепел, сажа, жжёное дерево, горелая смола, сильно обжаренный кофе.",
+      typicalSources: ["Сильно обжаренный дуб", "Копчёности", "Жареные зёрна кофе", "Сильный карамельный сироп"],
+      pairingLogic: "Очень мощный слой. Нужны жир, сладость и/или кислотность: сливки, карамель, фрукт, крепкий алкоголь. Нежные фрукты/травы лучше не перегружать."
+    }
+  }
+};
+
+/* УТИЛИТАРНЫЕ ХЭЛПЕРЫ: поиск по молекулярным кластерам */
+
+/**
+ * findMolecularNeighbors('Маракуйя') → список кластеров/соединений,
+ * где маракуйя фигурирует как typicalSource.
+ */
+window.findMolecularNeighbors = function(ingredientName){
+  const needle = normalizeString(ingredientName);
+  const hits = [];
+  if(!window.FLAVOR_CHEMISTRY || !window.FLAVOR_CHEMISTRY.moleculeFamilies) return hits;
+
+  for(const [familyKey, family] of Object.entries(window.FLAVOR_CHEMISTRY.moleculeFamilies)){
+    if(family.mainCompounds){
+      for(const [compoundKey, compound] of Object.entries(family.mainCompounds)){
+        const sources = (compound.typicalSources || []).map(normalizeString);
+        if(sources.includes(needle)){
+          hits.push({
+            familyKey,
+            familyName: family.name,
+            compoundKey,
+            compoundName: compound.name
+          });
+        }
+      }
+    }
+    if(family.typicalSources){
+      const sources = (family.typicalSources || []).map(normalizeString);
+      if(sources.includes(needle)){
+        hits.push({
+          familyKey,
+          familyName: family.name,
+          compoundKey: null,
+          compoundName: null
+        });
+      }
+    }
+  }
+  return hits;
+};
+
+/**
+ * getMolecularSuggestionGraph('Маракуйя') →
+ *  {
+ *    clusters: [... как в findMolecularNeighbors ...],
+ *    relatedIngredients: ["Грейпфрут", "Крыжовник", ...]
+ *  }
+ *
+ * Связывает продукт с другими типичными источниками внутри тех же молекулярных семейств.
+ */
+window.getMolecularSuggestionGraph = function(ingredientName){
+  const needle = normalizeString(ingredientName);
+  const clusters = window.findMolecularNeighbors(ingredientName);
+  const related = new Set();
+
+  if(!window.FLAVOR_CHEMISTRY || !window.FLAVOR_CHEMISTRY.moleculeFamilies) {
+    return { clusters, relatedIngredients: [] };
+  }
+
+  for(const hit of clusters){
+    const family = window.FLAVOR_CHEMISTRY.moleculeFamilies[hit.familyKey];
+    if(!family) continue;
+
+    if(hit.compoundKey && family.mainCompounds){
+      const compound = family.mainCompounds[hit.compoundKey];
+      if(compound && compound.typicalSources){
+        compound.typicalSources.forEach(src => {
+          if(normalizeString(src) !== needle){
+            related.add(src);
+          }
+        });
+      }
+    } else {
+      // кластеры без mainCompounds, только typicalSources на уровне семейства
+      (family.typicalSources || []).forEach(src => {
+        if(normalizeString(src) !== needle){
+          related.add(src);
+        }
+      });
+    }
+  }
+
+  return {
+    clusters,
+    relatedIngredients: Array.from(related)
+  };
+};
+
+
+
+
+/* ==== ДОБАВЛЕНО ChatGPT: расширение FLAVOR_DATA по молекулярной логике ====
+ *
+ * Мы не перезаписываем существующие записи, а патчим их:
+ *  - для ряда ингредиентов добавляются новые сочетания в best/good/unexpected;
+ *  - добавления делаются только если пары (to) ещё нет в соответствующей категории.
+ */
+
+window.FLAVOR_DATA_ENRICH = {
+  "Маракуйя": {
+    "notes": "Тиолы (3MH, 3MHA). Тропический, крыжовниково-грейпфрутовый профиль.",
+    "best": [
+      {"to":"Розовый грейпфрут","tip":"Общая тиольная база + кислотность"},
+      {"to":"Крыжовник","tip":"Зелёно-фруктовые тиольные ноты"},
+      {"to":"Гуава","tip":"Усиление тропического профиля"},
+      {"to":"Шампанское","tip":"Кислота и пузырь подчёркивают тиолы"}
+    ],
+    "good": [
+      {"to":"Йогурт","tip":"Кисломолочная жирность смягчает резкость тиолов"},
+      {"to":"Ром белый","tip":"Тростниковая сладость + тропический профиль"},
+      {"to":"Лемонграсс","tip":"Цитраль подчеркивает тропический характер"}
+    ],
+    "unexpected": [
+      {"to":"Базилик","tip":"Зелёные терпены поддерживают маракуйю"},
+      {"to":"Чёрный перец","tip":"Ротундон добавляет перечно-пряный акцент"}
+    ]
+  },
+
+  "Крыжовник": {
+    "notes": "Яркая кислота, пиразины и тиолы. Переход между зелёными и тропическими фруктами.",
+    "best": [
+      {"to":"Маракуйя","tip":"Общие тиолы (3MH/3MHA) усиливают фруктовость"},
+      {"to":"Розовый грейпфрут","tip":"Тиольный цитрус + кислая опора"},
+      {"to":"Чёрная смородина","tip":"Связь по тиолам (4MMP) и зелёным тонам"},
+      {"to":"Шампанское","tip":"Кислота и автолиз подчёркивают зелёные фрукты"}
+    ],
+    "good": [
+      {"to":"Мята","tip":"Освежает и подчёркивает кислоту"},
+      {"to":"Йогурт","tip":"Смягчает резкость, создаёт десертный профиль"}
+    ],
+    "unexpected": [
+      {"to":"Базилик","tip":"Травяные терпены продолжают зелёный характер"},
+      {"to":"Огурец","tip":"Чистая зелёная свежесть для алко-хайболов"}
+    ]
+  },
+
+  "Чёрная смородина": {
+    "notes": "Сильный тиольный профиль (4MMP). От ягодной сладости до «кошачьей» остроты при высокой концентрации.",
+    "best": [
+      {"to":"Маракуйя","tip":"Общий тиольный характер, тропический сдвиг"},
+      {"to":"Крыжовник","tip":"Зелёно-ягодный мост"},
+      {"to":"Шампанское","tip":"Кислота и дрожжевые ноты обрамляют смородину"},
+      {"to":"Тёмный шоколад","tip":"Горечь и какао балансируют мощный аромат"}
+    ],
+    "good": [
+      {"to":"Розовый грейпфрут","tip":"Цитрусовое тиольное эхо"},
+      {"to":"Ром белый","tip":"Сладость и спирт вытягивают ягодный профиль"}
+    ],
+    "unexpected": [
+      {"to":"Розмарин","tip":"Смолистые терпены подчёркивают чёрную смородину"},
+      {"to":"Тимьян","tip":"Травяной фон + перечность (ротундон)"}
+    ]
+  },
+
+  "Лаванда": {
+    "notes": "Линалоол и другие терпены. Цветочность с лёгкой лекарственной нотой.",
+    "best": [
+      {"to":"Лимоны","tip":"Цитрусовый кислый контраст к цветочности"},
+      {"to":"Мёд","tip":"Цветочный мёд усиливает линалоол"},
+      {"to":"Йогурт","tip":"Мягкая кисломолочная база для десертов и коктейлей"}
+    ],
+    "good": [
+      {"to":"Шампанское","tip":"Автолиз + цветочные ноты"},
+      {"to":"Ром белый","tip":"Флоральный тропический акцент в сауэрах"}
+    ],
+    "unexpected": [
+      {"to":"Огурец","tip":"Чистая зелёная свежесть против цветочности"},
+      {"to":"Тимьян","tip":"Травяной, но тоже терпеновый мост"}
+    ]
+  },
+
+  "Роза": {
+    "notes": "Гераниол, β-дамасценон. Чистая цветочность с фруктовым подтоном.",
+    "best": [
+      {"to":"Малина","tip":"Классическая ягодно-розовая связка"},
+      {"to":"Личи","tip":"Тропическая цветочность, общие мотивы"},
+      {"to":"Яблоки","tip":"Фруктово-цветочный десертный профиль"}
+    ],
+    "good": [
+      {"to":"Шампанское","tip":"Флоральный акцент в игристом"},
+      {"to":"Йогурт","tip":"Лёгкая кисломолочная база для розовых десертов"}
+    ],
+    "unexpected": [
+      {"to":"Чёрный перец","tip":"Перчёность подчёркивает цветочность"},
+      {"to":"Базилик","tip":"Травы + роза в сложных миксах"}
+    ]
+  },
+
+  "Можжевельник": {
+    "notes": "α-пинен, 1,8-цинеол. Хвойность, лёгкая камфора. База джина.",
+    "best": [
+      {"to":"Лимоны","tip":"Классика джин-тоника: цитрус + хвоя"},
+      {"to":"Лаймы","tip":"Более резкая, тропическая цитрусовость"},
+      {"to":"Огурец","tip":"Чистая зелёная свежесть против хвои"}
+    ],
+    "good": [
+      {"to":"Розмарин","tip":"Усиление хвойного профиля"},
+      {"to":"Тимьян","tip":"Смолистые травы в той же палитре"}
+    ],
+    "unexpected": [
+      {"to":"Чёрная смородина","tip":"Тиольная ягода поверх хвойного фона"},
+      {"to":"Грейпфруты","tip":"Горько-цитрусовый акцент в длинных напитках"}
+    ]
+  },
+
+  "Розмарин": {
+    "notes": "Терпены (цинеол, пинен). Смолистый, хвойный, слегка камфорный профиль.",
+    "best": [
+      {"to":"Апельсины","tip":"Цитрусовая сладость + хвойная пряность"},
+      {"to":"Лимоны","tip":"Кислая свежесть против смолистости"},
+      {"to":"Ягнёнок","tip":"Классика кухни: жирное мясо + хвоя"}
+    ],
+    "good": [
+      {"to":"Шампанское","tip":"Ароматическая веточка в игристом коктейле"},
+      {"to":"Чёрный перец","tip":"Перечно-хвойный акцент"}
+    ],
+    "unexpected": [
+      {"to":"Маракуйя","tip":"Тропики + хвойные терпены"},
+      {"to":"Крыжовник","tip":"Зелёные кислые фрукты + травы"}
+    ]
+  },
+
+  "Зелёный болгарский перец": {
+    "notes": "Пиразины. Зелёный, травяной, иногда почти винный профиль (как в некоторых винах).",
+    "best": [
+      {"to":"Лаймы","tip":"Кислота и цитрус подчёркивают зелёные ноты"},
+      {"to":"Кинза","tip":"Трава + трава, общий зелёный профиль"},
+      {"to":"Оливковое масло","tip":"Жир округляет резкость пиразинов"}
+    ],
+    "good": [
+      {"to":"Фета","tip":"Соль и жир для салатов и миксов"},
+      {"to":"Йогурт","tip":"Соусы и дипы с яркой зеленью"}
+    ],
+    "unexpected": [
+      {"to":"Шампанское","tip":"Кислота и пузырь поднимают зелёные ноты (как в некоторых винах)"},
+      {"to":"Маракуйя","tip":"Зелёно-тропический мост через тиолы"}
+    ]
+  },
+
+  "Шампанское": {
+    "notes": "Кислота, автолиз (лизатные ноты), иногда тиольные и цитрусово-фруктовые оттенки.",
+    "best": [
+      {"to":"Устрицы","tip":"Классика: морской йод + кислотность и пузырь"},
+      {"to":"Пармезан","tip":"Лизатные ноты на лизатных нотах"},
+      {"to":"Чёрная смородина","tip":"Яркая ягода в кисло-игристой базе"}
+    ],
+    "good": [
+      {"to":"Маракуйя","tip":"Тиолы + кислотность + газ"},
+      {"to":"Крыжовник","tip":"Зелёный фруктовый акцент в бокале"}
+    ],
+    "unexpected": [
+      {"to":"Копчёный лосось","tip":"Жир и дым против свежести и кислоты"},
+      {"to":"Розмарин","tip":"Травяная ветка в игристых коктейлях"}
+    ]
+  },
+
+  "Выдержанные рислинги": {
+    "notes": "Норизопреноиды (TDN). Нефтеподобные ноты, лайм, персик, иногда мёд.",
+    "best": [
+      {"to":"Персик","tip":"Общий фруктово-цветочный профиль"},
+      {"to":"Абрикос","tip":"Косточковые фрукты подчёркивают сладость аромата"},
+      {"to":"Копчёная рыба","tip":"Дым и «нефть» по одну сторону, кислота по другую"}
+    ],
+    "good": [
+      {"to":"Кислая капуста","tip":"Ферментированная кислота + минералка вина"},
+      {"to":"Козий сыр","tip":"Кислый жир + ароматное белое"}
+    ],
+    "unexpected": [
+      {"to":"Карри","tip":"Специи и норизопреноиды дают сложный восточный профиль"},
+      {"to":"Копчёный чай","tip":"Дым/смола поддерживают TDN"}
+    ]
+  }
+};
+
+/* Патчинг существующего FLAVOR_DATA новыми связями 
+ * Выполняется сразу после определения FLAVOR_DATA_ENRICH
+ * Использует канонические имена для проверки дубликатов
+ */
+(function patchFlavorData(){
+  if (!window.FLAVOR_DATA || !window.FLAVOR_DATA_ENRICH) return;
+  
+  Object.entries(window.FLAVOR_DATA_ENRICH).forEach(function([key, patch]){
+    // Создаем запись, если её еще нет в базе (для новых ингредиентов)
+    if (!window.FLAVOR_DATA[key]) {
+      window.FLAVOR_DATA[key] = { notes: '', best: [], good: [], bad: [], unexpected: [] };
+    }
+    
+    var base = window.FLAVOR_DATA[key];
+
+    ["notes","best","good","bad","unexpected"].forEach(function(cat){
+      if (cat === "notes" && patch.notes) {
+        // Если в оригинале нет notes или она пустая — обновляем/дописываем
+        if (!base.notes || base.notes.trim() === '') {
+          base.notes = patch.notes;
+        } else if (patch.notes && !base.notes.includes(patch.notes)) {
+          // Добавляем новую информацию, если она не дублируется
+          base.notes = base.notes + ' ' + patch.notes;
+        }
+        return;
+      }
+      if (!patch[cat]) return;
+      if (!base[cat]) base[cat] = [];
+      
+      // Используем канонические имена для проверки дубликатов
+      patch[cat].forEach(function(item){
+        if (!item || !item.to) return;
+        const itemCanon = normalizeString(item.to);
+        // Проверяем дубликаты по каноническому имени
+        var exists = base[cat].some(function(x){ 
+          return x && x.to && normalizeString(x.to) === itemCanon; 
+        });
+        if (!exists) {
+          base[cat].push(item);
+        }
+      });
+    });
+  });
+})();
+
+// После патчинга обновляем таксономию, чтобы новые ингредиенты попали в неё
+// Вызываем autoExpandTaxonomy ещё раз для обновления
+(function updateTaxonomyAfterEnrichment(){
+  if (!window.FLAVOR_DATA || !window.TAXONOMY) return;
+  const { allIngredients } = extractAllIngredients();
+  
+  const existingKeys = new Set();
+  (window.TAXONOMY.categories || []).forEach(cat => existingKeys.add(cat));
+  Object.keys(window.TAXONOMY.groups || {}).forEach(g => existingKeys.add(g));
+  Object.keys(window.TAXONOMY.subgroups || {}).forEach(sg => existingKeys.add(sg));
+  Object.keys(window.TAXONOMY.names || {}).forEach(n => existingKeys.add(n));
+  Object.keys(window.FLAVOR_DATA || {}).forEach(k => existingKeys.add(k));
+  
+  // Добавляем новые ингредиенты в таксономию
+  allIngredients.forEach(ing => {
+    const ingCanon = normalizeString(ing);
+    let found = false;
+    existingKeys.forEach(key => {
+      if(normalizeString(key) === ingCanon){
+        found = true;
+      }
+    });
+    
+    if(!found && window.FLAVOR_DATA[ing]){
+      // Ингредиент есть в FLAVOR_DATA, но нет в таксономии
+      // Добавляем его в соответствующую категорию по логике классификации
+      const ingLower = ingCanon;
+      
+      if(ingLower.includes('вино') || ingLower.includes('рислинг') || ingLower.includes('шампанское')){
+        // Алкогольные напитки
+        if(!window.TAXONOMY.groups['Крепкие алкогольные напитки']) {
+          window.TAXONOMY.groups['Крепкие алкогольные напитки'] = [];
+        }
+        if(!window.TAXONOMY.groups['Крепкие алкогольные напитки'].includes('Вино')) {
+          window.TAXONOMY.groups['Крепкие алкогольные напитки'].push('Вино');
+        }
+        if(!window.TAXONOMY.subgroups['Вино']) {
+          window.TAXONOMY.subgroups['Вино'] = [];
+        }
+        if(!window.TAXONOMY.subgroups['Вино'].includes(ing)){
+          window.TAXONOMY.subgroups['Вино'].push(ing);
+        }
+      } else if(ingLower.includes('рыба') || ingLower.includes('устриц') || ingLower.includes('лосос')){
+        // Морепродукты
+        if(!window.TAXONOMY.groups['Овощи']) window.TAXONOMY.groups['Овощи'] = [];
+        if(!window.TAXONOMY.groups['Овощи'].includes('Морепродукты')){
+          window.TAXONOMY.groups['Овощи'].push('Морепродукты');
+        }
+        if(!window.TAXONOMY.subgroups['Морепродукты']){
+          window.TAXONOMY.subgroups['Морепродукты'] = [];
+        }
+        if(!window.TAXONOMY.subgroups['Морепродукты'].includes('Рыба')){
+          window.TAXONOMY.subgroups['Морепродукты'].push('Рыба');
+        }
+        if(!window.TAXONOMY.names['Рыба']){
+          window.TAXONOMY.names['Рыба'] = [];
+        }
+        if(!window.TAXONOMY.names['Рыба'].includes(ing)){
+          window.TAXONOMY.names['Рыба'].push(ing);
+        }
+      } else if(ingLower.includes('лаванд') || ingLower.includes('роз') || ingLower.includes('можжевел')){
+        // Травы и ароматические
+        if(!window.TAXONOMY.groups['Травы и зелень']) window.TAXONOMY.groups['Травы и зелень'] = [];
+        if(!window.TAXONOMY.groups['Травы и зелень'].includes('Свежие травы')){
+          window.TAXONOMY.groups['Травы и зелень'].push('Свежие травы');
+        }
+        if(!window.TAXONOMY.subgroups['Свежие травы']){
+          window.TAXONOMY.subgroups['Свежие травы'] = [];
+        }
+        if(!window.TAXONOMY.subgroups['Свежие травы'].includes(ing)){
+          window.TAXONOMY.subgroups['Свежие травы'].push(ing);
+        }
+        if(!window.TAXONOMY.names[ing]){
+          window.TAXONOMY.names[ing] = [ing];
+        }
+      } else if(ingLower.includes('крыжовник') || ingLower.includes('смородина') || ingLower.includes('гуав') || ingLower.includes('личи')){
+        // Ягоды и фрукты
+        if(!window.TAXONOMY.groups['Фрукты']) window.TAXONOMY.groups['Фрукты'] = [];
+        if(!window.TAXONOMY.groups['Фрукты'].includes('Ягоды')){
+          window.TAXONOMY.groups['Фрукты'].push('Ягоды');
+        }
+        if(!window.TAXONOMY.subgroups['Ягоды']){
+          window.TAXONOMY.subgroups['Ягоды'] = [];
+        }
+        if(!window.TAXONOMY.subgroups['Ягоды'].includes(ing)){
+          window.TAXONOMY.subgroups['Ягоды'].push(ing);
+        }
+        if(!window.TAXONOMY.names[ing]){
+          window.TAXONOMY.names[ing] = [ing];
+        }
+      } else if(ingLower.includes('грейпфрут') || ingLower.includes('лемонграсс')){
+        // Цитрусовые
+        if(!window.TAXONOMY.groups['Фрукты']) window.TAXONOMY.groups['Фрукты'] = [];
+        if(!window.TAXONOMY.groups['Фрукты'].includes('Цитрусовые')){
+          window.TAXONOMY.groups['Фрукты'].push('Цитрусовые');
+        }
+        if(!window.TAXONOMY.subgroups['Цитрусовые']){
+          window.TAXONOMY.subgroups['Цитрусовые'] = [];
+        }
+        if(!window.TAXONOMY.subgroups['Цитрусовые'].includes(ing)){
+          window.TAXONOMY.subgroups['Цитрусовые'].push(ing);
+        }
+        if(!window.TAXONOMY.names[ing]){
+          window.TAXONOMY.names[ing] = [ing];
+        }
+      } else if(ingLower.includes('перец') && ingLower.includes('болгарск')){
+        // Овощи
+        if(!window.TAXONOMY.groups['Овощи']) window.TAXONOMY.groups['Овощи'] = [];
+        if(!window.TAXONOMY.groups['Овощи'].includes('Стеблевые')){
+          window.TAXONOMY.groups['Овощи'].push('Стеблевые');
+        }
+        if(!window.TAXONOMY.subgroups['Стеблевые']){
+          window.TAXONOMY.subgroups['Стеблевые'] = [];
+        }
+        if(!window.TAXONOMY.subgroups['Стеблевые'].includes(ing)){
+          window.TAXONOMY.subgroups['Стеблевые'].push(ing);
+        }
+        if(!window.TAXONOMY.names[ing]){
+          window.TAXONOMY.names[ing] = [ing];
+        }
+      }
+    }
+  });
+})();
+
