@@ -6,6 +6,48 @@ window.CATEGORY_META = [
   {"key":"unexpected","angle":1.570795,"color":"#00c2ff"}
 ];
 
+// Вспомогательная функция для нормализации строк (упрощенная версия canon)
+function normalizeString(s){
+  if(!s) return "";
+  return String(s).normalize('NFKC')
+    .replace(/[–—−]/g,'-')
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g,' ')
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g,'е');
+}
+
+// Функция для автоматического извлечения всех ингредиентов из FLAVOR_DATA
+function extractAllIngredients(){
+  const allIngredients = new Set();
+  const ingredientCategories = new Map(); // Ингредиент -> категория(и), где он упоминается
+  
+  // Собираем все ингредиенты из FLAVOR_DATA
+  if(window.FLAVOR_DATA){
+    Object.entries(window.FLAVOR_DATA).forEach(([key, data])=>{
+      if(!data) return;
+      allIngredients.add(key); // Добавляем сам ключ
+      
+      // Собираем все ингредиенты из всех категорий
+      ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
+        (data[catKey] || []).forEach(item => {
+          if(item.to){
+            allIngredients.add(item.to);
+            // Сохраняем категорию, где упоминается ингредиент
+            if(!ingredientCategories.has(item.to)){
+              ingredientCategories.set(item.to, new Set());
+            }
+            ingredientCategories.get(item.to).add(catKey);
+          }
+        });
+      });
+    });
+  }
+  
+  return { allIngredients, ingredientCategories };
+}
+
 window.TAXONOMY = {
   "categories": ["Фрукты","Овощи","Пряности","Сухие ингредиенты","Травы и зелень","Орехи и семена","Молочные","Крепкие алкогольные напитки"],
   "groups": {
@@ -440,3 +482,116 @@ window.FLAVOR_DATA = {
     "unexpected":[{"to":"Мёд","tip":"Тёплые сауэры"},{"to":"Имбирь","tip":"Пряные ноты"}]
   }
 };
+
+// Автоматически извлекаем все ингредиенты из базы данных и добавляем их в таксономию
+(function autoExpandTaxonomy(){
+  const { allIngredients, ingredientCategories } = extractAllIngredients();
+  
+  // Проверяем, что таксономия существует
+  if(!window.TAXONOMY){
+    window.TAXONOMY = { categories: [], groups: {}, subgroups: {}, names: {} };
+  }
+  
+  // Создаем категорию "Дополнительные ингредиенты" для ингредиентов, которых нет в текущей таксономии
+  if(!window.TAXONOMY.categories.includes("Дополнительные ингредиенты")){
+    window.TAXONOMY.categories.push("Дополнительные ингредиенты");
+    window.TAXONOMY.groups["Дополнительные ингредиенты"] = [];
+  }
+  
+  const existingKeys = new Set();
+  // Собираем все существующие ключи из таксономии
+  (window.TAXONOMY.categories || []).forEach(cat => existingKeys.add(cat));
+  Object.keys(window.TAXONOMY.groups || {}).forEach(g => existingKeys.add(g));
+  Object.keys(window.TAXONOMY.subgroups || {}).forEach(sg => existingKeys.add(sg));
+  Object.keys(window.TAXONOMY.names || {}).forEach(n => existingKeys.add(n));
+  
+  // Группируем ингредиенты по типам
+  const others = [];
+  const drinks = [];
+  const foods = [];
+  const spices = [];
+  
+  // Ключевые слова для классификации
+  const drinkKeywords = ['алкоголь', 'водка', 'ром', 'текила', 'коньяк', 'бренди', 'сироп', 'сок', 'газированная вода', 'чай', 'кофе'];
+  const foodKeywords = ['рыба', 'мясо', 'сыр', 'молоко', 'яйцо', 'гриб', 'бекон', 'прошутто', 'печень', 'курица', 'инжир', 'бульон', 'томатный сок', 'авокадо', 'кокос'];
+  const spiceKeywords = ['хмель', 'кинин', 'дым', 'перец', 'уксус', 'бальзамик', 'тахини', 'соус', 'карри', 'паприка', 'васаби', 'кардамон', 'кориандр'];
+  
+  allIngredients.forEach(ing => {
+    const ingCanon = normalizeString(ing);
+    
+    // Проверяем, есть ли уже в таксономии
+    let found = false;
+    existingKeys.forEach(key => {
+      const keyCanon = normalizeString(key);
+      if(keyCanon === ingCanon){
+        found = true;
+      }
+    });
+    
+    if(!found){
+      if(drinkKeywords.some(kw => ingCanon.includes(kw))){
+        drinks.push(ing);
+      } else if(foodKeywords.some(kw => ingCanon.includes(kw))){
+        foods.push(ing);
+      } else if(spiceKeywords.some(kw => ingCanon.includes(kw))){
+        spices.push(ing);
+      } else {
+        others.push(ing);
+      }
+    }
+  });
+  
+  // Добавляем группы и подгруппы
+  if(drinks.length > 0){
+    const groupName = "Напитки и жидкости";
+    if(!window.TAXONOMY.groups["Дополнительные ингредиенты"].includes(groupName)){
+      window.TAXONOMY.groups["Дополнительные ингредиенты"].push(groupName);
+      window.TAXONOMY.subgroups[groupName] = drinks;
+    }
+  }
+  
+  if(foods.length > 0){
+    const groupName = "Продукты питания";
+    if(!window.TAXONOMY.groups["Дополнительные ингредиенты"].includes(groupName)){
+      window.TAXONOMY.groups["Дополнительные ингредиенты"].push(groupName);
+      if(!window.TAXONOMY.subgroups[groupName]){
+        window.TAXONOMY.subgroups[groupName] = [];
+      }
+      foods.forEach(f => {
+        if(!window.TAXONOMY.subgroups[groupName].includes(f)){
+          window.TAXONOMY.subgroups[groupName].push(f);
+        }
+      });
+    }
+  }
+  
+  if(spices.length > 0){
+    const groupName = "Пряности и добавки";
+    if(!window.TAXONOMY.groups["Дополнительные ингредиенты"].includes(groupName)){
+      window.TAXONOMY.groups["Дополнительные ингредиенты"].push(groupName);
+      if(!window.TAXONOMY.subgroups[groupName]){
+        window.TAXONOMY.subgroups[groupName] = [];
+      }
+      spices.forEach(s => {
+        if(!window.TAXONOMY.subgroups[groupName].includes(s)){
+          window.TAXONOMY.subgroups[groupName].push(s);
+        }
+      });
+    }
+  }
+  
+  if(others.length > 0){
+    const groupName = "Прочее";
+    if(!window.TAXONOMY.groups["Дополнительные ингредиенты"].includes(groupName)){
+      window.TAXONOMY.groups["Дополнительные ингредиенты"].push(groupName);
+      if(!window.TAXONOMY.subgroups[groupName]){
+        window.TAXONOMY.subgroups[groupName] = [];
+      }
+      others.forEach(o => {
+        if(!window.TAXONOMY.subgroups[groupName].includes(o)){
+          window.TAXONOMY.subgroups[groupName].push(o);
+        }
+      });
+    }
+  }
+})();

@@ -166,6 +166,24 @@
     Object.keys(window.FLAVOR_DATA||{}).forEach(k=>{
       KEY_INDEX[canon(k)] = k;
     });
+    // Также добавляем все ингредиенты из FLAVOR_DATA в KEY_INDEX
+    // (все значения в полях best, good, bad, unexpected)
+    if(window.FLAVOR_DATA){
+      Object.values(window.FLAVOR_DATA).forEach(data=>{
+        if(!data) return;
+        ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
+          (data[catKey] || []).forEach(item => {
+            if(item && item.to){
+              // Добавляем ингредиент в KEY_INDEX, если его там еще нет
+              const itemCanon = canon(item.to);
+              if(!KEY_INDEX[itemCanon]){
+                KEY_INDEX[itemCanon] = item.to;
+              }
+            }
+          });
+        });
+      });
+    }
     // add aliases
     Object.entries(ALIASES).forEach(([wrong, right])=>{
       const r = KEY_INDEX[canon(right)] || right;
@@ -317,9 +335,14 @@
       ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
         const items = sourceData[catKey] || [];
         items.forEach(item => {
-          // Проверяем как оригинальное значение, так и каноническое
+          if(!item || !item.to) return;
+          // Проверяем как оригинальное значение, так и каноническое через realKey
           const itemCanon = canon(item.to);
-          if(itemCanon === keyCanon){
+          const itemRealKey = realKey(item.to);
+          const itemRealKeyCanon = canon(itemRealKey);
+          
+          // Проверяем совпадение с каноническим именем (с учетом алиасов и индексов)
+          if(itemCanon === keyCanon || itemRealKeyCanon === keyCanon){
             // Нашли упоминание - добавляем источник в ту же категорию (обратная связь)
             // Если A в best для B, то B может быть в best для A (взаимность)
             // Если A в bad для B, то B может быть в bad для A
@@ -336,6 +359,7 @@
     ['best', 'good', 'bad', 'unexpected'].forEach(catKey => {
       const seen = new Set();
       result[catKey] = foundIn[catKey].filter(item => {
+        if(!item || !item.to) return false;
         const key = canon(item.to);
         if(seen.has(key)) return false;
         seen.add(key);
